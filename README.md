@@ -73,6 +73,10 @@ Prefer clicking? Use **Choose Files…** in the menu bar or tray icon. On Window
 **Bold** tools open an editor window with a live preview (sliders, drag-to-select boxes, a waveform or frame-strip timeline)
 and Save writes a new file beside the original. "Compress to size" asks for a target (for example 250 KB or 25 MB).
 
+<p align="center">
+  <img src="docs/editors.png" alt="Four Satsuma editors: Annotate, Add Background, Trim audio and Split video" width="100%">
+</p>
+
 <sub>¹ Mac only · ² needs ffmpeg · ³ needs pandoc · ⁴ needs LibreOffice. Without ffmpeg, audio and video fall back to the
 OS encoders (fewer formats, no editors).</sub>
 
