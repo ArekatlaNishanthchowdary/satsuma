@@ -102,6 +102,7 @@ enum Catalog {
                 Op(title: "Read QR Code") { try Img.readQR($0); return [] },
             ]
             if multi { ops.append(Op(title: "Make PDF") { [try Img.makePDF($0)] }) }
+            if multi { ops.append(Op(title: "Collage") { [try ImageEdit.collage($0)] }) }
         case .video:
             guard ff else { ops = [each("Snapshot", AV.snapshot), each("Compress", AV.compressVideo), each("Extract Audio", AV.extractAudio)]; break }
             ops = [
@@ -127,6 +128,7 @@ enum Catalog {
             }
         case .pdf:
             ops = [
+                Op(title: "Organize") { urls in try onMain { try Organizer.open(urls[0]) }; return [] },
                 each("Compress", PDFs.compress),
                 each("Split Pages", PDFs.split),
                 each("Rotate", PDFs.rotate),

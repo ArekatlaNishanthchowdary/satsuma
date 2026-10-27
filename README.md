@@ -46,8 +46,8 @@
    | Wheel | Mac | Windows | What's on it |
    |---|---|---|---|
    | **Convert** | <kbd>⇧ Shift</kbd> | <kbd>Shift</kbd> | Every output format for that kind of file |
-   | **Tools** | <kbd>⌘ Command</kbd> | <kbd>Ctrl</kbd> | Compress, resize, rotate, split, merge, extract… |
-   | **Actions** | <kbd>⌃ Control</kbd> | <kbd>Alt</kbd> | Copy, Copy Path, Terminal, Move To…, plus AirDrop & Quick Look (Mac) or Open (Windows) |
+   | **Tools** | <kbd>⌘ Command</kbd> | <kbd>Ctrl</kbd> | Editors (crop, trim, redact…), compress to size, organize PDF pages, merge, extract… |
+   | **Actions** | <kbd>⌃ Control</kbd> | <kbd>Alt</kbd> | Copy, Copy Path, Terminal, Move To…, Float, plus AirDrop & Quick Look (Mac) or Share & Open (Windows) |
 
 3. **Drop on a slice.** The result is saved **next to the original** and highlighted in Finder or Explorer.
    Drop in the middle to cancel; tap another key to switch wheels.
@@ -59,23 +59,31 @@ Prefer clicking? Use **Choose Files…** in the menu bar or tray icon. On Window
 
 | Kind | Convert to | Tools |
 |---|---|---|
-| 🖼 **Images**: JPG, PNG, HEIC, TIFF, BMP, GIF, WebP, AVIF, SVG¹ | JPG · PNG · HEIC¹ · TIFF · BMP · GIF · PDF · WebP² · AVIF² | Compress · Resize 50% · Rotate · Flip · Grayscale · Strip Metadata · Read QR¹ · Make PDF |
-| 🎵 **Audio**: MP3, M4A, WAV, FLAC, OGG, Opus, AIFF, WMA | M4A · WAV · FLAC · AIFF¹ · MP3³ · WMA³ · OGG² · Opus² | Mono · Compress³ · Normalize² · Trim Silence² · Join² · Strip Metadata² |
-| 🎬 **Video**: MP4, MOV, MKV, WebM, AVI, WMV | MP4 · MOV¹ · WMV³ · M4A · MP3³ · MKV² · WebM² · AVI² · GIF² | Snapshot · Compress · Extract Audio · Mute² · Speed 2×² · Join² |
-| 📄 **PDF** | PNG / JPG (every page, 300 DPI) · TXT · Markdown · DOCX · RTF · HTML | Compress · Split Pages · Rotate · Merge · Strip Metadata |
-| 📝 **Documents**: DOCX, ODT, RTF, HTML, TXT, Markdown, EPUB⁴ | PDF · DOCX · ODT · RTF · HTML · TXT · Markdown · EPUB⁴ | |
-| 📊 **Spreadsheets**: CSV, TSV, XLSX | CSV · TSV · XLSX | |
+| 🖼 **Images**: JPG, PNG, HEIC, TIFF, BMP, GIF, WebP, AVIF, SVG¹ | JPG · PNG · HEIC · TIFF · BMP · GIF · PDF · DOCX · WebP² · AVIF² | **Edit** · **Crop** · **Redact** · **Annotate** · **Add BG** · Compress to size · Resize 50% · Rotate · Strip Metadata · Read QR¹ · Make PDF · Collage |
+| 🎵 **Audio**: MP3, M4A, WAV, FLAC, OGG, Opus, AIFF, WMA, AAC | MP3 · M4A · WAV · FLAC · OGG · Opus · AIFF · WMA | **Trim** · **Bleep** · **Channels** · **Visualize** · **Split** · Compress to size · Normalize · Trim Silence · Strip Metadata · Join |
+| 🎬 **Video**: MP4, MOV, MKV, WebM, AVI, WMV, M4V | MP4 · MOV · MKV · WebM · AVI · WMV · GIF · MP3 · M4A | **Trim** · **Split** · **Speed** · **Crop** · **Redact** · Compress to size · Snapshot · Mute · Extract Audio · Strip Metadata · Join |
+| 📄 **PDF** | PNG / JPG (every page, 300 DPI) · TXT · Markdown · DOCX · RTF · HTML · XLSX · EPUB³ · PPTX⁴ | **Organize** · Compress · Split Pages · Rotate · Merge · Strip Metadata |
+| 📝 **Documents**: DOCX, ODT, RTF, HTML, TXT, Markdown, EPUB³ (+ DOC, RTFD, webarchive on Mac) | PDF · DOCX · ODT · RTF · HTML · TXT · Markdown · EPUB³ | |
+| 📊 **Spreadsheets**: CSV, TSV, XLSX, ODS, XLS⁴ | CSV · TSV · XLSX · ODS · PDF | |
+| 📽 **Slides**⁴: PPT, PPTX, ODP | PDF · PNG · JPG | |
 | 💬 **Subtitles**: SRT, VTT | SRT · VTT · TXT | |
 | 🗜 **Archives**: ZIP, TAR, TAR.GZ, GZ, RAR, 7z | ZIP · TAR · TAR.GZ | Extract |
 | 📁 **Anything** | | Zip |
 
-<sub>¹ Mac built in (on Windows, MOV and AIFF need ffmpeg; SVG input, HEIC output and Read QR are Mac-only) ·
-² needs ffmpeg · ³ Windows built in, Mac needs ffmpeg · ⁴ needs pandoc</sub>
+**Bold** tools open an editor window with a live preview (sliders, drag-to-select boxes, a waveform or frame-strip timeline)
+and Save writes a new file beside the original. "Compress to size" asks for a target (for example 250 KB or 25 MB).
+
+<sub>¹ Mac only · ² needs ffmpeg · ³ needs pandoc · ⁴ needs LibreOffice. Without ffmpeg, audio and video fall back to the
+OS encoders (fewer formats, no editors).</sub>
+
+**How many?** Counted as input format → output format pairs with ffmpeg, pandoc and LibreOffice installed, Satsuma offers
+**343 conversions on Mac and 311 on Windows**, plus **41 tools** (Mac; 40 on Windows) and **7 actions**. Without the
+optional engines the counts are lower.
 
 Satsuma uses what your OS already ships with (ImageIO, AVFoundation, PDFKit and Liquid Glass on macOS; Media Foundation,
 Windows.Data.Pdf and `tar` on Windows). **ffmpeg** and **pandoc** are optional, and Satsuma picks them up automatically:
 
-- **Windows:** `winget install ffmpeg` and `winget install pandoc`, or use the tray menu's **Install…** items.
+- **Windows:** `winget install ffmpeg`, `winget install pandoc` and `winget install TheDocumentFoundation.LibreOffice`, or use the tray menu's **Install…** items.
 - **Intel Mac:** Homebrew no longer ships Intel builds, so put the standalone
   [ffmpeg](https://evermeet.cx/ffmpeg/) and [pandoc](https://github.com/jgm/pandoc/releases) binaries in `~/.local/bin`.
 
@@ -158,9 +166,10 @@ The only third-party code ships in the Windows build (the two PDF libraries). Ev
 
 ## Limitations
 
-- No Pages, Numbers, Keynote, PPT/PPTX or ODS.
-- Tools use sensible fixed settings: no crop or trim editors, and no "compress to exactly N MB" yet.
+- No Apple Pages, Numbers or Keynote formats. PPT, PPTX, XLS and PDF → PPTX need LibreOffice.
+- PDF → XLSX guesses columns from spacing; real tables in PDFs may need tidying.
 - XLSX reads the first sheet's values (not formulas).
+- PDF Organize reorders with arrow buttons (no drag-and-drop yet).
 - The trigger keys are fixed. On Windows, tapping Shift while dragging a window shows an empty wheel until you let go.
 - The installers aren't code-signed, so your OS asks once.
 

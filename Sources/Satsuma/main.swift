@@ -25,6 +25,15 @@ if let i = CommandLine.arguments.firstIndex(of: "--shot"), CommandLine.arguments
         try! Editor.snapshot(sample, tool).representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: CommandLine.arguments[i + 2]))
         exit(0)
     }
+    if CommandLine.arguments[i + 1] == "organize" {
+        // A three-page PDF of plain colour pages, the last one landscape.
+        let pages = try! [(600, 800, NSColor.systemOrange), (600, 800, .systemTeal), (800, 600, .systemPurple)].map { w, h, c in
+            let ctx = try ImageEdit.canvas(w, h); ctx.setFillColor(c.cgColor); ctx.fill(CGRect(x: 60, y: 60, width: w - 120, height: h / 3))
+            let u = FileManager.default.temporaryDirectory.appendingPathComponent("satsuma-page-\(c.hash).png"); try Img.write(ctx.makeImage()!, to: u); return u
+        }
+        try! Organizer.snapshot(Img.makePDF(pages)).representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: CommandLine.arguments[i + 2]))
+        exit(0)
+    }
     let view = WheelView(frame: NSRect(x: 0, y: 0, width: WheelPanel.size, height: WheelPanel.size))
     view.theme = Theme.all.first { $0.name == "Midnight" }!
     view.mode = ["tools": .tools, "actions": .actions][CommandLine.arguments[i + 1]] ?? .convert

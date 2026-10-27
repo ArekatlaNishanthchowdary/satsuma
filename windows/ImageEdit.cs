@@ -56,6 +56,25 @@ static class ImageEdit
         return rtb;
     }
 
+    /// <summary>A near-square grid on white: every cell the same size (the median picture's aspect), pictures fitted and centred.</summary>
+    public static BitmapSource Collage(List<BitmapSource> pics, int cell = 800, int gap = 24)
+    {
+        int cols = (int)Math.Ceiling(Math.Sqrt(pics.Count)), rows = (pics.Count + cols - 1) / cols;
+        var aspect = pics.Select(p => (double)p.PixelWidth / p.PixelHeight).OrderBy(a => a).ElementAt(pics.Count / 2);
+        int cw = aspect >= 1 ? cell : (int)(cell * aspect), ch = aspect >= 1 ? (int)(cell / aspect) : cell;
+        return Render(gap + cols * (cw + gap), gap + rows * (ch + gap), dc =>
+        {
+            dc.DrawRectangle(Brushes.White, null, new Rect(0, 0, gap + cols * (cw + gap), gap + rows * (ch + gap)));
+            for (int i = 0; i < pics.Count; i++)
+            {
+                var p = pics[i];
+                double k = Math.Min((double)cw / p.PixelWidth, (double)ch / p.PixelHeight), w = p.PixelWidth * k, h = p.PixelHeight * k;
+                double x = gap + i % cols * (cw + gap) + (cw - w) / 2, y = gap + i / cols * (ch + gap) + (ch - h) / 2;
+                dc.DrawImage(p, new Rect(x, y, w, h));
+            }
+        });
+    }
+
     /// <summary>Downscaled copy for live previews; returns the factor applied.</summary>
     public static BitmapSource Shrink(BitmapSource src, int maxSide, out double scale)
     {

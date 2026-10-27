@@ -103,6 +103,7 @@ static class Catalog
                     Each("Strip Metadata", f => Img.Transform(f, " clean", b => b)),
                 });
                 if (multi) ops.Add(new Op("Make PDF", fs => new() { Pdfs.MakeFromImages(fs) }));
+                if (multi) ops.Add(new Op("Collage", fs => { var o = Paths.Output(fs[0], "jpg", " collage"); Img.Save(ImageEdit.Collage(fs.Take(36).Select(Img.Load).ToList()), o); return new() { o }; }));
                 break;
             case Kind.Video:
                 if (!ff)
@@ -131,7 +132,7 @@ static class Catalog
                 if (multi) ops.Add(new Op("Join", fs => new() { AV.Join(fs) }));
                 break;
             case Kind.Pdf:
-                ops.AddRange(new[] { Each("Compress", Pdfs.Compress), Each("Split Pages", Pdfs.Split), Each("Rotate", Pdfs.Rotate), Each("Strip Metadata", Pdfs.Strip) });
+                ops.AddRange(new[] { new Op("Organize", fs => { Organizer.Open(fs[0]); return new(); }, true), Each("Compress", Pdfs.Compress), Each("Split Pages", Pdfs.Split), Each("Rotate", Pdfs.Rotate), Each("Strip Metadata", Pdfs.Strip) });
                 if (multi) ops.Add(new Op("Merge", fs => new() { Pdfs.Merge(fs) }));
                 break;
             case Kind.Archive:

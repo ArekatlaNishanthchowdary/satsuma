@@ -53,8 +53,8 @@ static class Pdfs
         }
     }
 
-    /// <summary>Every page at 300 DPI, using Windows' built-in PDF renderer.</summary>
-    static List<BitmapSource> Render(string src)
+    /// <summary>Every page at 300 DPI (or <paramref name="width"/> pixels wide), using Windows' built-in PDF renderer.</summary>
+    public static List<BitmapSource> Render(string src, uint width = 0)
     {
         var file = StorageFile.GetFileFromPathAsync(Path.GetFullPath(src)).AsTask().GetAwaiter().GetResult();
         var doc = WinPdf.PdfDocument.LoadFromFileAsync(file).AsTask().GetAwaiter().GetResult();
@@ -63,7 +63,7 @@ static class Pdfs
         {
             using var page = doc.GetPage(i);
             using var ras = new InMemoryRandomAccessStream();
-            var opts = new WinPdf.PdfPageRenderOptions { DestinationWidth = (uint)(page.Size.Width * 300 / 96) };
+            var opts = new WinPdf.PdfPageRenderOptions { DestinationWidth = width > 0 ? width : (uint)(page.Size.Width * 300 / 96) };
             page.RenderToStreamAsync(ras, opts).AsTask().GetAwaiter().GetResult();
             ras.Seek(0);
             using var s = ras.AsStreamForRead();
@@ -199,6 +199,22 @@ static class Pdfs
     {
         foreach (var p in d.Pages) p.Rotate = (p.Rotate + 90) % 360;
     });
+
+    /// <summary>Writes the pages in the given order (0-based indexes, others dropped), each turned by an extra multiple of 90°.</summary>
+    public static string Organize(string src, List<(int Index, int Turn)> pages)
+    {
+        if (pages.Count == 0) throw new Fail("Keep at least one page.");
+        using var doc = PdfReader.Open(src, PdfDocumentOpenMode.Import);
+        using var result = new PdfDocument();
+        foreach (var (i, turn) in pages)
+        {
+            var p = result.AddPage(doc.Pages[i]);
+            p.Rotate = ((doc.Pages[i].Rotate + turn) % 360 + 360) % 360;
+        }
+        var outPath = Paths.Output(src, "pdf", " organized");
+        result.Save(outPath);
+        return outPath;
+    }
 
     public static string Strip(string src) => Edit(src, " clean", PdfDocumentOpenMode.Modify, d => d.Info.Elements.Clear());
 

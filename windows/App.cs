@@ -190,7 +190,7 @@ class Controller
             { Checked = Click.Enabled });
         menu.Items.Add(new WF.ToolStripSeparator());
 
-        foreach (var (name, path, id) in new[] { ("ffmpeg", Shell.FFmpeg, "Gyan.FFmpeg"), ("pandoc", Shell.Pandoc, "JohnMacFarlane.Pandoc") })
+        foreach (var (name, path, id) in new[] { ("ffmpeg", Shell.FFmpeg, "Gyan.FFmpeg"), ("pandoc", Shell.Pandoc, "JohnMacFarlane.Pandoc"), ("LibreOffice", Shell.Soffice, "TheDocumentFoundation.LibreOffice") })
         {
             if (path != null) menu.Items.Add(new WF.ToolStripMenuItem($"{name} found ✓") { Enabled = false });
             else menu.Items.Add($"Install {name} for more formats…", null, (_, _) =>

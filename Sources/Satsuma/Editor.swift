@@ -7,14 +7,14 @@ enum EditTool: String, CaseIterable {
 }
 
 /// Closure target for AppKit controls; kept alive by the editor that owns the control.
-private final class Handler: NSObject {
+final class Handler: NSObject {
     let f: (Any?) -> Void
     init(_ f: @escaping (Any?) -> Void) { self.f = f }
     @objc func fire(_ sender: Any?) { f(sender) }
 }
 
 /// Cmd+S saves, Cmd+Z undoes, Esc closes.
-private final class EditorWindow: NSWindow {
+final class EditorWindow: NSWindow {
     var keys: [String: () -> Void] = [:]
     override func performKeyEquivalent(with e: NSEvent) -> Bool {
         if e.modifierFlags.contains(.command), let f = keys[e.charactersIgnoringModifiers ?? ""] { f(); return true }

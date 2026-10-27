@@ -66,6 +66,11 @@ static class SelfTest
             var merged = Tool("Merge", pdf, imgPdf)[0];
             Check(PdfReader.Open(merged, PdfDocumentOpenMode.Import).PageCount == 2, "merge pdfs");
             Check(Directory.GetFiles(Tool("Split Pages", merged)[0]).Length == 2, "split pdf");
+            using (var org = PdfReader.Open(Pdfs.Organize(merged, new() { (1, 0), (0, 270) }), PdfDocumentOpenMode.Import))
+                Check(org.PageCount == 2 && org.Pages[1].Rotate == 270 && Math.Abs(org.Pages[0].Width.Point - 48) < 1, "organize: reorder + turn");
+            Check(PdfReader.Open(Pdfs.Organize(merged, new() { (0, 0) }), PdfDocumentOpenMode.Import).PageCount == 1, "organize: delete");
+            var collage = Img.Load(Tool("Collage", F("i.png"), F("i.png"), F("i.png"))[0]);
+            Check(collage.PixelWidth == 24 + 2 * 824 && collage.PixelHeight == 24 + 2 * 624, "collage 2×2 grid");
 
             var unpacked = Tool("Extract", Tool("Zip", F("t.csv"))[0])[0];
             Check(File.ReadAllText(Path.Combine(unpacked, "t.csv")) == File.ReadAllText(F("t.csv")), "zip → extract");

@@ -116,7 +116,15 @@ enum SelfTest {
             ctx.fill(CGRect(x: 0, y: 0, width: 32, height: 48))
             try Img.write(ctx.makeImage()!, to: png)
             check(try Img.load(Convert.run(png, to: "jpg")).width == 64, "png → jpg")
-            check(PDFDocument(url: try Convert.run(png, to: "pdf"))?.pageCount == 1, "png → pdf")
+            let imgPdf = try Convert.run(png, to: "pdf")
+            check(PDFDocument(url: imgPdf)?.pageCount == 1, "png → pdf")
+            let merged = try PDFs.merge([pdf, imgPdf])
+            let org = PDFDocument(url: try PDFs.organize(merged, [(1, 0), (0, 270)]))!
+            check(org.pageCount == 2 && org.page(at: 1)!.rotation == 270
+                  && org.page(at: 0)!.bounds(for: .mediaBox).width == PDFDocument(url: imgPdf)!.page(at: 0)!.bounds(for: .mediaBox).width, "organize: reorder + turn")
+            check(PDFDocument(url: try PDFs.organize(merged, [(0, 0)]))?.pageCount == 1, "organize: delete")
+            let collage = try Img.load(tool("Collage", [png, png, png])[0])
+            check(collage.width == 24 + 2 * 824 && collage.height == 24 + 2 * 624, "collage 2×2 grid")
             check(try Img.load(tool("Resize 50%", [png])[0]).width == 32, "resize 50%")
             try editorChecks(Img.load(png), check)
             let imgDocx = try Convert.run(png, to: "docx")
