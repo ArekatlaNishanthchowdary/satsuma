@@ -57,6 +57,7 @@ static class SelfTest
             var imgPdf = Converter.Run(F("i.png"), "pdf");
             Check(PdfReader.Open(imgPdf, PdfDocumentOpenMode.Import).PageCount == 1, "png → pdf");
             Check(Img.Load(Tool("Resize 50%", F("i.png"))[0]).PixelWidth == 32, "resize 50%");
+            EditorChecks(bmp);
             using (var docx = System.IO.Compression.ZipFile.OpenRead(Converter.Run(F("i.png"), "docx")))
                 Check(docx.GetEntry("word/media/image1.png")?.Length > 0 && docx.GetEntry("word/document.xml") != null, "png → docx");
             if (Img.CanHeic.Value) Check(Img.Load(Converter.Run(F("i.png"), "heic")).PixelWidth == 64, "png → heic");
@@ -101,6 +102,38 @@ static class SelfTest
         finally { try { Directory.Delete(dir, true); } catch { } }
     }
 
+    /// <summary>The pure functions behind the image editors (the windows themselves are checked by eye via --shots).</summary>
+    static void EditorChecks(BitmapSource img)
+    {
+        void Check(bool ok, string what) { Console.WriteLine(ok ? $"ok   {what}" : $"FAIL {what}"); if (!ok) throw new Fail(what); }
+        byte At(BitmapSource b, int x, int y, int c) => ImageEdit.Pixels(b, out int w, out _)[(y * w + x) * 4 + c];
+
+        Check(ImageEdit.Adjust(img, new()) == img, "edit: zero sliders leave the picture alone");
+        Check(At(ImageEdit.Adjust(img, new(Exposure: 50)), 5, 5, 1) > At(img, 5, 5, 1), "edit: exposure brightens");
+        var gray = ImageEdit.Adjust(img, new(Saturation: -100));
+        Check(Math.Abs(At(gray, 5, 5, 0) - At(gray, 5, 5, 2)) <= 1, "edit: saturation −100 is gray");
+        var cropped = ImageEdit.Crop(img, new System.Windows.Rect(10, 5, 20, 30));
+        Check(cropped.PixelWidth == 20 && cropped.PixelHeight == 30, "crop to rect");
+        var black = ImageEdit.Redact(img, new[] { new System.Windows.Rect(0, 0, 16, 16) }, RedactStyle.Black);
+        Check(At(black, 8, 8, 2) == 0 && At(black, 20, 20, 2) == At(img, 20, 20, 2), "redact black stays inside its box");
+        var pix = ImageEdit.Redact(img, new[] { new System.Windows.Rect(24, 0, 16, 48) }, RedactStyle.Pixelate);
+        Check(At(pix, 24, 0, 2) == At(pix, 29, 5, 2), "redact pixelate makes blocks");
+        var blur = ImageEdit.Redact(img, new[] { new System.Windows.Rect(24, 0, 16, 48) }, RedactStyle.Blur);
+        Check(At(blur, 31, 20, 2) is > 0 and < 255 && At(blur, 50, 20, 2) == At(img, 50, 20, 2), "redact blur softens the edge only inside");
+        var marked = ImageEdit.Annotate(img, new[] { new Mark(MarkKind.Box, new() { new(4, 4), new(60, 44) }, System.Windows.Media.Colors.Lime, 3) });
+        Check(marked.PixelWidth == 64 && At(marked, 4, 20, 1) > 200 && At(marked, 4, 20, 2) < 80, "annotate draws a box");
+        var square = ImageEdit.AddBackground(img, new Backdrop(System.Windows.Media.Colors.Orange, System.Windows.Media.Colors.Purple, Ratio: 1));
+        Check(square.PixelWidth == square.PixelHeight && square.PixelWidth > 64, "add background, 1:1");
+
+        // Noise compresses badly, so the size search has real work to do.
+        var rnd = new Random(1);
+        var noise = new byte[800 * 600 * 4];
+        rnd.NextBytes(noise);
+        for (int i = 3; i < noise.Length; i += 4) noise[i] = 255;
+        var jpg = ImageEdit.EncodeUnder(ImageEdit.FromPixels(noise, 800, 600), 60_000);
+        Check(jpg.Length <= 60_000 && jpg.Length > 20_000, $"compress to 60 KB ({jpg.Length / 1000} KB)");
+    }
+
     /// <summary><c>--shots dir</c>: transparent PNGs of each wheel (Tangerine) and of every theme, for the README.</summary>
     public static void Shots(string dir)
     {
@@ -121,6 +154,17 @@ static class SelfTest
         Img.Save(wheel.Render(Mode.Convert, photo, null, Brushes.Transparent, pic), Path.Combine(dir, "mode-convert.png"));
         Img.Save(wheel.Render(Mode.Tools, photo, 0, Brushes.Transparent), Path.Combine(dir, "mode-tools.png"));
         Img.Save(wheel.Render(Mode.Actions, photo, 3, Brushes.Transparent), Path.Combine(dir, "mode-actions.png"));
+        // Editor windows, each with a little demo state, on a generated sample photo.
+        var sample = Path.Combine(dir, "sample.png");
+        Img.Save(ImageEdit.Render(1200, 800, dc =>
+        {
+            dc.DrawRectangle(new LinearGradientBrush(Color.FromRgb(255, 190, 110), Color.FromRgb(110, 70, 170), 90), null, new System.Windows.Rect(0, 0, 1200, 800));
+            dc.DrawEllipse(new SolidColorBrush(Color.FromRgb(255, 235, 180)), null, new System.Windows.Point(820, 330), 90, 90);
+            dc.DrawEllipse(new SolidColorBrush(Color.FromRgb(40, 50, 70)), null, new System.Windows.Point(400, 1000), 900, 420);
+        }), sample);
+        foreach (var tool in Enum.GetValues<EditTool>())
+            Img.Save(Editor.Snapshot(sample, tool, e => e.Demo()), Path.Combine(dir, $"editor-{tool}.png"));
+        File.Delete(sample);
         foreach (var t in Theme.All)
         {
             Theme.Current = t;

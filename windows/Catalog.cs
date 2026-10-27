@@ -94,12 +94,14 @@ static class Catalog
         switch (kind)
         {
             case Kind.Image:
+                // Editors open a window per picture (at most four at once) and save from there.
+                Op Editor(string title, EditTool t) => new(title, fs => { foreach (var f in fs.Take(4)) Satsuma.Editor.Open(f, t); return new(); }, true);
                 ops.AddRange(new[] {
-                    Each("Compress", Img.Compress),
+                    Editor("Edit", EditTool.Edit), Editor("Crop", EditTool.Crop), Editor("Redact", EditTool.Redact),
+                    Editor("Annotate", EditTool.Annotate), Editor("Add BG", EditTool.Background),
+                    new Op("Compress", fs => SizePrompt.Ask(fs[0]) is long target ? fs.Select(f => ImageEdit.CompressTo(f, target)).ToList() : new(), true),
                     Each("Resize 50%", f => Img.Transform(f, " small", b => Img.Scale(b, 0.5, 0.5))),
                     Each("Rotate", f => Img.Transform(f, " rotated", b => Img.Rotate(b, 90))),
-                    Each("Flip", f => Img.Transform(f, " flipped", b => Img.Scale(b, -1, 1))),
-                    Each("Grayscale", f => Img.Transform(f, " mono", Img.Gray)),
                     Each("Strip Metadata", f => Img.Transform(f, " clean", b => b)),
                 });
                 if (multi) ops.Add(new Op("Make PDF", fs => new() { Pdfs.MakeFromImages(fs) }));

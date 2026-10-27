@@ -24,11 +24,11 @@ static class Program
         if (args.FirstOrDefault() == "--convert") { AttachConsole(-1); Console.WriteLine(Converter.Run(args[1], args[2])); return 0; }
 
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
-        // Dev aid: "--action Float a.jpg" runs one Alt-wheel action without dragging.
+        // Dev aid: "--action Float a.jpg" runs one Alt- or Ctrl-wheel slice without dragging.
         if (args.FirstOrDefault() == "--action")
         {
             var files = args.Skip(2).Select(Path.GetFullPath).ToList();
-            app.Startup += (_, _) => Catalog.Ops(Mode.Actions, files).First(o => o.Title == args[1]).Run(files);
+            app.Startup += (_, _) => Catalog.Ops(Mode.Actions, files).Concat(Catalog.Ops(Mode.Tools, files)).First(o => o.Title == args[1]).Run(files);
             app.Run();
             return 0;
         }

@@ -222,7 +222,7 @@ static class Img
         return outPath;
     }
 
-    static string SameFormat(string src)
+    public static string SameFormat(string src)
     {
         var e = Catalog.NormExt(src);
         return Writable.Contains(e) || (Shell.FFmpeg != null && e is "webp" or "avif") ? e : "png";

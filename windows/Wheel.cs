@@ -207,7 +207,7 @@ class WheelWindow : Window
 
     static readonly Dictionary<string, char> Icons = new()
     {
-        ["Compress"] = '', ["Resize 50%"] = '', ["Rotate"] = '', ["Flip"] = '',
+        ["Compress"] = '', ["Edit"] = '', ["Crop"] = '', ["Redact"] = '', ["Annotate"] = '', ["Add BG"] = '', ["Resize 50%"] = '', ["Rotate"] = '', ["Flip"] = '',
         ["Grayscale"] = '', ["Strip Metadata"] = '', ["Make PDF"] = '', ["Zip"] = '',
         ["Snapshot"] = '', ["Extract Audio"] = '', ["Mute"] = '', ["Speed 2×"] = '',
         ["Join"] = '', ["Normalize"] = '', ["Trim Silence"] = '', ["Mono"] = '',
@@ -250,15 +250,20 @@ static class Thumbs
         return frame;
     }
 
+    public static string Bytes(long n)
+    {
+        double bytes = n;
+        var units = new[] { "B", "KB", "MB", "GB", "TB" };
+        int u = 0;
+        for (; bytes >= 1000 && u < units.Length - 1; u++) bytes /= 1000;
+        return u == 0 ? $"{bytes:0} B" : $"{bytes:0.#} {units[u]}";
+    }
+
     /// <summary>"2.4 MB", or "3 items · 7.1 MB"; folders aren't walked, so they add nothing.</summary>
     public static string Describe(List<string> files)
     {
         if (files.Count == 0) return "";
-        double bytes = files.Where(System.IO.File.Exists).Sum(f => (double)new System.IO.FileInfo(f).Length);
-        var units = new[] { "B", "KB", "MB", "GB", "TB" };
-        int u = 0;
-        for (; bytes >= 1000 && u < units.Length - 1; u++) bytes /= 1000;
-        var size = u == 0 ? $"{bytes:0} B" : $"{bytes:0.#} {units[u]}";
+        var size = Bytes(files.Where(System.IO.File.Exists).Sum(f => new System.IO.FileInfo(f).Length));
         if (files.Count == 1) return System.IO.Directory.Exists(files[0]) ? "Folder" : size;
         return $"{files.Count} items · {size}";
     }
