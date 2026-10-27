@@ -172,7 +172,8 @@ final class WheelView: NSView {
 
     /// SF Symbols for tool and action slices (all available on macOS 13).
     static let symbols: [String: String] = [
-        "Compress": "arrow.down.right.and.arrow.up.left", "Resize 50%": "arrow.up.left.and.arrow.down.right",
+        "Compress": "arrow.down.right.and.arrow.up.left", "Edit": "slider.horizontal.3", "Crop": "crop",
+        "Redact": "eye.slash", "Annotate": "pencil.tip", "Add BG": "photo.on.rectangle", "Resize 50%": "arrow.up.left.and.arrow.down.right",
         "Rotate": "rotate.right", "Flip": "arrow.left.and.right.righttriangle.left.righttriangle.right",
         "Grayscale": "circle.lefthalf.filled", "Strip Metadata": "tag.slash", "Read QR Code": "qrcode.viewfinder",
         "Make PDF": "doc.richtext", "Zip": "doc.zipper", "Snapshot": "camera", "Extract Audio": "waveform",

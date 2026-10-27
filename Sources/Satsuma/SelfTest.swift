@@ -3,6 +3,37 @@ import PDFKit
 
 /// `Satsuma --selftest`: round-trips one file of each native format through the real ops.
 enum SelfTest {
+    /// The pure functions behind the image editors (the windows themselves are checked by eye via --shot editor-…).
+    static func editorChecks(_ img: CGImage, _ check: (Bool, String) -> Void) throws {
+        func at(_ i: CGImage, _ x: Int, _ y: Int, _ c: Int) throws -> UInt8 {
+            let (ctx, px) = try ImageEdit.pixels(i)
+            return withExtendedLifetime(ctx) { px[(y * i.width + x) * 4 + c] }  // the pointer dies with its context
+        }
+        check(try ImageEdit.adjust(img, Adjustments()) === img, "edit: zero sliders leave the picture alone")
+        check(try at(ImageEdit.adjust(img, Adjustments(exposure: 50)), 5, 5, 1) > at(img, 5, 5, 1), "edit: exposure brightens")
+        let gray = try ImageEdit.adjust(img, Adjustments(saturation: -100))
+        check(abs(Int(try at(gray, 5, 5, 0)) - Int(try at(gray, 5, 5, 2))) <= 1, "edit: saturation −100 is gray")
+        let cropped = try ImageEdit.crop(img, CGRect(x: 10, y: 5, width: 20, height: 30))
+        check(cropped.width == 20 && cropped.height == 30, "crop to rect")
+        let black = try ImageEdit.redact(img, [CGRect(x: 0, y: 0, width: 16, height: 16)], .black)
+        check(try at(black, 8, 8, 0) == 0 && at(black, 20, 20, 0) == at(img, 20, 20, 0), "redact black stays inside its box")
+        let pix = try ImageEdit.redact(img, [CGRect(x: 24, y: 0, width: 16, height: 48)], .pixelate)
+        check(try at(pix, 24, 0, 0) == at(pix, 29, 5, 0), "redact pixelate makes blocks")
+        let blur = try ImageEdit.redact(img, [CGRect(x: 24, y: 0, width: 16, height: 48)], .blur)
+        check(try (1...254).contains(at(blur, 31, 20, 0)) && at(blur, 50, 20, 0) == at(img, 50, 20, 0), "redact blur softens the edge only inside")
+        let marked = try ImageEdit.annotate(img, [Mark(kind: .box, points: [CGPoint(x: 4, y: 4), CGPoint(x: 60, y: 44)], color: NSColor(srgbRed: 0, green: 1, blue: 0, alpha: 1), width: 3)])
+        check(try marked.width == 64 && at(marked, 4, 20, 1) > 200 && at(marked, 4, 20, 0) < 80, "annotate draws a box")
+        let square = try ImageEdit.addBackground(img, BackgroundStyle(from: .orange, to: .purple, ratio: 1))
+        check(square.width == square.height && square.width > 64, "add background, 1:1")
+        // Noise compresses badly, so the size search has real work to do.
+        let ctx = try ImageEdit.canvas(800, 600)
+        var rng = SystemRandomNumberGenerator()
+        let px = ctx.data!.assumingMemoryBound(to: UInt8.self)
+        for i in 0..<(800 * 600 * 4) { px[i] = i % 4 == 3 ? 255 : UInt8.random(in: 0...255, using: &rng) }
+        let jpg = try ImageEdit.encodeUnder(ctx.makeImage()!, target: 60_000)
+        check(jpg.count <= 60_000 && jpg.count > 20_000, "compress to 60 KB (\(jpg.count / 1000) KB)")
+    }
+
     static func run() {
         do {
             let dir = try tempDir()
@@ -53,6 +84,7 @@ enum SelfTest {
             check(try Img.load(Convert.run(png, to: "jpg")).width == 64, "png → jpg")
             check(PDFDocument(url: try Convert.run(png, to: "pdf"))?.pageCount == 1, "png → pdf")
             check(try Img.load(tool("Resize 50%", [png])[0]).width == 32, "resize 50%")
+            try editorChecks(Img.load(png), check)
             let imgDocx = try Convert.run(png, to: "docx")
             check(String(decoding: try Shell.run("/usr/bin/unzip", ["-Z1", imgDocx.path]), as: UTF8.self).contains("word/media/image1.png"), "png → docx")
             check(try Img.load(Convert.run(png, to: "heic")).width == 64, "png → heic")

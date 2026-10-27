@@ -177,14 +177,6 @@ enum Img {
         return out
     }
 
-    // ponytail: lossy re-encode at a fixed quality; add a target-size search if people want "under 1 MB".
-    static func compress(_ src: URL) throws -> URL {
-        let ext = normExt(src) == "heic" ? "heic" : "jpg"
-        let out = output(for: src, ext: ext, suffix: " compressed")
-        try write(load(src), to: out, quality: 0.6)
-        return out
-    }
-
     static func readQR(_ urls: [URL]) throws {
         let detector = CIDetector(ofType: CIDetectorTypeQRCode, context: nil, options: [CIDetectorAccuracy: CIDetectorAccuracyHigh])
         var found: [String] = []

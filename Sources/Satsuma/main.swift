@@ -4,6 +4,18 @@ import ServiceManagement
 // `--shot <mode> <out.png>`: draws one wheel (solid Midnight theme, since glass needs a live window) for checking layouts.
 if let i = CommandLine.arguments.firstIndex(of: "--shot"), CommandLine.arguments.count > i + 2 {
     _ = NSApplication.shared
+    if let tool = EditTool.allCases.first(where: { "editor-" + $0.rawValue.lowercased().replacingOccurrences(of: " ", with: "-") == CommandLine.arguments[i + 1] }) {
+        // A generated dusk photo to edit: sky gradient, sun, dark hill.
+        let ctx = try! ImageEdit.canvas(1200, 800, flipped: true)
+        let sky = CGGradient(colorsSpace: ImageEdit.srgb, colors: [Theme.rgb(255, 190, 110).cgColor, Theme.rgb(110, 70, 170).cgColor] as CFArray, locations: [0, 1])!
+        ctx.drawLinearGradient(sky, start: .zero, end: CGPoint(x: 0, y: 800), options: [])
+        ctx.setFillColor(Theme.rgb(255, 235, 180).cgColor); ctx.fillEllipse(in: CGRect(x: 730, y: 240, width: 180, height: 180))
+        ctx.setFillColor(Theme.rgb(40, 50, 70).cgColor); ctx.fillEllipse(in: CGRect(x: -500, y: 580, width: 1800, height: 840))
+        let sample = FileManager.default.temporaryDirectory.appendingPathComponent("satsuma-sample.png")
+        try! Img.write(ctx.makeImage()!, to: sample)
+        try! Editor.snapshot(sample, tool).representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: CommandLine.arguments[i + 2]))
+        exit(0)
+    }
     let view = WheelView(frame: NSRect(x: 0, y: 0, width: WheelPanel.size, height: WheelPanel.size))
     view.theme = Theme.all.first { $0.name == "Midnight" }!
     view.mode = ["tools": .tools, "actions": .actions][CommandLine.arguments[i + 1]] ?? .convert
@@ -21,6 +33,25 @@ if let i = CommandLine.arguments.firstIndex(of: "--shot"), CommandLine.arguments
     view.cacheDisplay(in: view.bounds, to: rep)
     try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: CommandLine.arguments[i + 2]))
     exit(0)
+}
+
+// Dev aid: `--edit <crop|edit|…> <file>` opens one editor window without dragging.
+if let i = CommandLine.arguments.firstIndex(of: "--edit"), CommandLine.arguments.count > i + 2,
+   let tool = EditTool.allCases.first(where: { $0.rawValue.lowercased().hasPrefix(CommandLine.arguments[i + 1]) }) {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+    try! Editor.open(URL(fileURLWithPath: CommandLine.arguments[i + 2]), tool)
+    // `--snap out.png` saves the live window's content after it has settled, then quits.
+    if let j = CommandLine.arguments.firstIndex(of: "--snap"), CommandLine.arguments.count > j + 1 {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            let view = NSApp.windows.first { $0.isVisible && $0.contentView is NSStackView }!.contentView!
+            let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds)!
+            view.cacheDisplay(in: view.bounds, to: rep)
+            try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: CommandLine.arguments[j + 1]))
+            exit(0)
+        }
+    }
+    app.run()
 }
 
 if CommandLine.arguments.contains("--selftest") {

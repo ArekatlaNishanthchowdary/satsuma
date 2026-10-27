@@ -90,12 +90,18 @@ enum Catalog {
         var ops: [Op] = []
         switch kind {
         case .image:
+            // Editors open a window per picture (at most four at once) and save from there.
+            func editor(_ title: String, _ t: EditTool) -> Op {
+                Op(title: title) { urls in try onMain { try urls.prefix(4).forEach { try Editor.open($0, t) } }; return [] }
+            }
             ops = [
-                each("Compress", Img.compress),
+                editor("Edit", .edit), editor("Crop", .crop), editor("Redact", .redact), editor("Annotate", .annotate), editor("Add BG", .background),
+                Op(title: "Compress") { urls in
+                    guard let target = onMain({ SizePrompt.ask(urls[0]) }) else { return [] }
+                    return try urls.map { try ImageEdit.compress($0, target: target) }
+                },
                 each("Resize 50%") { try Img.transform($0, suffix: " small") { $0.transformed(by: CGAffineTransform(scaleX: 0.5, y: 0.5)) } },
                 each("Rotate") { try Img.transform($0, suffix: " rotated") { $0.oriented(.right) } },
-                each("Flip") { try Img.transform($0, suffix: " flipped") { $0.oriented(.upMirrored) } },
-                each("Grayscale") { try Img.transform($0, suffix: " mono") { $0.applyingFilter("CIPhotoEffectMono") } },
                 each("Strip Metadata") { try Img.transform($0, suffix: " clean") { $0 } },
                 Op(title: "Read QR Code") { try Img.readQR($0); return [] },
             ]
