@@ -247,19 +247,32 @@ class Controller
     public void ShowPickMenu(List<string> files, bool exitWhenDone)
     {
         var menu = new WF.ContextMenuStrip();
+        bool picked = false;
         foreach (var mode in new[] { Mode.Convert, Mode.Tools, Mode.Actions })
         {
             var parent = new WF.ToolStripMenuItem(mode.Title());
             foreach (var op in Catalog.Ops(mode, files))
-                parent.DropDownItems.Add(op.Title, null, (_, _) => Perform(op, files, mode, exitWhenDone ? () => Application.Current.Shutdown() : null));
+                parent.DropDownItems.Add(op.Title, null, (_, _) => { picked = true; Perform(op, files, mode, exitWhenDone ? ExitWhenIdle : null); });
             parent.Enabled = parent.DropDownItems.Count > 0;
             menu.Items.Add(parent);
         }
-        menu.Closed += (_, e) =>
+        // The root menu can close before a submenu item's Click runs, so decide only once the click has had its turn.
+        menu.Closed += (_, _) =>
         {
-            if (exitWhenDone && e.CloseReason != WF.ToolStripDropDownCloseReason.ItemClicked) Application.Current.Shutdown();
+            if (exitWhenDone) Application.Current.Dispatcher.BeginInvoke(() => { if (!picked) ExitWhenIdle(); }, DispatcherPriority.ApplicationIdle);
         };
         menu.Show(WF.Cursor.Position);
+    }
+
+    /// <summary>Send To mode: quit now, or when the last editor / Float window the job opened is closed.</summary>
+    static void ExitWhenIdle()
+    {
+        var app = Application.Current;
+        if (app == null) return;
+        // Our own windows that stay alive hidden (wheel, HUD, share host) don't show in the taskbar.
+        var open = app.Windows.Cast<Window>().Where(w => w.IsVisible && w.ShowInTaskbar).ToList();
+        if (open.Count == 0) { app.Shutdown(); return; }
+        foreach (var w in open) w.Closed += (_, _) => ExitWhenIdle();
     }
 
     [StructLayout(LayoutKind.Sequential)] struct POINT { public int X, Y; }
