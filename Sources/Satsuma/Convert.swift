@@ -209,6 +209,14 @@ enum Img {
 
 enum AV {
     static let audioExts: Set = ["mp3", "m4a", "wav", "flac", "ogg", "opus", "aiff", "wma"]
+    // What AVFoundation and afconvert can open; MKV, WebM, AVI, WMV, OGG… need ffmpeg.
+    static let nativeExts: Set = ["mp4", "mov", "m4v", "3gp", "m4a", "mp3", "wav", "aiff", "aif", "aifc", "caf", "flac", "aac"]
+
+    static func requireNative(_ src: URL) throws {
+        let ext = src.pathExtension.lowercased()
+        guard !nativeExts.contains(ext) else { return }
+        throw Fail("macOS can't read \(ext.uppercased()) files by itself. Put ffmpeg in ~/.local/bin or /usr/local/bin, then reopen Satsuma.")
+    }
 
     static func convert(_ src: URL, to ext: String) throws -> URL {
         let out = output(for: src, ext: ext)
@@ -220,16 +228,19 @@ enum AV {
             if isVideo && audioExts.contains(ext) { args += ["-vn"] }
             try Shell.ffmpeg(args + [out.path])
         } else if isVideo {
+            try requireNative(src)
             try avconvert(src, out, preset: ext == "m4a" ? "PresetAppleM4A" : "PresetHighestQuality")
         } else {
             let fmt = ["m4a": ["-f", "m4af", "-d", "aac"], "wav": ["-f", "WAVE", "-d", "LEI16"],
                        "aiff": ["-f", "AIFF", "-d", "BEI16"], "flac": ["-f", "flac", "-d", "flac"]][ext] ?? []
+            try requireNative(src)
             try Shell.run("/usr/bin/afconvert", fmt + [src.path, out.path])
         }
         return out
     }
 
     static func avconvert(_ src: URL, _ out: URL, preset: String) throws {
+        try requireNative(src)
         try Shell.run("/usr/bin/avconvert", ["--source", src.path, "--output", out.path, "--preset", preset, "--replace"])
     }
 
@@ -240,6 +251,13 @@ enum AV {
     }
 
     static func snapshot(_ src: URL) throws -> URL {
+        if Shell.ffmpeg != nil {
+            let mid = ((try? AVEdit.probe(src).duration) ?? 0) / 2
+            let out = output(for: src, ext: "png", suffix: " snapshot")
+            try Shell.ffmpeg(["-ss", String(format: "%.2f", mid), "-i", src.path, "-frames:v", "1", out.path])
+            return out
+        }
+        try requireNative(src)
         let asset = AVURLAsset(url: src)
         let gen = AVAssetImageGenerator(asset: asset)
         gen.appliesPreferredTrackTransform = true
@@ -269,6 +287,7 @@ enum AV {
 
     static func monoNative(_ src: URL) throws -> URL {
         let out = output(for: src, ext: "m4a", suffix: " mono")
+        try requireNative(src)
         try Shell.run("/usr/bin/afconvert", ["-f", "m4af", "-d", "aac", "-c", "1", src.path, out.path])
         return out
     }

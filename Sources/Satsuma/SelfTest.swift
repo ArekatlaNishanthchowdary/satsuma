@@ -35,6 +35,8 @@ enum SelfTest {
         check(try FileManager.default.contentsOfDirectory(atPath: AVEdit.split(a, am, cuts: [], parts: 2).path).count == 2, "split into 2 equal parts")
         check(try FileManager.default.contentsOfDirectory(atPath: AVEdit.split(v, m, cuts: [1, 2.5], parts: 2).path).count == 3, "split video at 1 s and 2.5 s")
         check(size(try AVEdit.compress(a, target: 60_000)) <= 60_000, "compress audio to 60 KB")
+        let mkv = try AV.ff(v, ext: "mkv", suffix: "", ["-c", "copy"])
+        check(try Img.load(AV.snapshot(mkv)).width == 320, "snapshot of an MKV (ffmpeg)")
     }
 
     /// The pure functions behind the image editors (the windows themselves are checked by eye via --shot editor-…).
@@ -140,6 +142,8 @@ enum SelfTest {
                 check(FileManager.default.fileExists(atPath: webp.path), "jpg → webp (ffmpeg)")
             }
             if Shell.ffmpeg != nil { try mediaChecks(dir, check) }
+            check((try? AV.requireNative(dir.appendingPathComponent("x.mkv"))) == nil && (try? AV.requireNative(dir.appendingPathComponent("x.MP4"))) != nil,
+                  "without ffmpeg, MKV is refused with a clear message")
             if Shell.pandoc != nil {
                 let md = dir.appendingPathComponent("m.md")
                 try "# Title\n\nSome *text*.".write(to: md, atomically: true, encoding: .utf8)
