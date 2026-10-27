@@ -5,6 +5,7 @@ final class WheelPanel: NSPanel {
     static let size: CGFloat = 380
     let wheel = WheelView(frame: NSRect(x: 0, y: 0, width: size, height: size))
     var mode: Mode { wheel.mode }
+    private var themeName = ""
 
     init() {
         super.init(contentRect: NSRect(x: 0, y: 0, width: Self.size, height: Self.size),
@@ -14,10 +15,21 @@ final class WheelPanel: NSPanel {
         hasShadow = false
         level = .popUpMenu
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        contentView = wheel
+    }
+
+    private func applyTheme() {
+        let theme = Theme.current
+        guard theme.name != themeName else { return }
+        themeName = theme.name
+        wheel.theme = theme
+        wheel.removeFromSuperview()
+        wheel.frame = NSRect(x: 0, y: 0, width: Self.size, height: Self.size)
+        contentView = Backdrop.wrap(wheel, radius: Self.size / 2, theme: theme, drawsOwnSolid: true)
+        hasShadow = theme.isGlass
     }
 
     func show(_ mode: Mode, files: [URL], at point: NSPoint) {
+        applyTheme()
         wheel.mode = mode
         wheel.files = files
         wheel.ops = Catalog.ops(mode, files)
@@ -34,9 +46,10 @@ final class WheelView: NSView {
     var ops: [Op] = []
     var hover: Int?
     var onPick: ((Op, [URL], Mode) -> Void)?
+    var theme = Theme.current
 
-    private let inner: CGFloat = 58, outer: CGFloat = 170
-    private let accent = NSColor(red: 1, green: 0.55, blue: 0.1, alpha: 1)
+    private let inner: CGFloat = 58, outer: CGFloat = 182
+    private var accent: NSColor { theme.accent }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -75,11 +88,15 @@ final class WheelView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let ring = NSBezierPath(ovalIn: NSRect(x: center.x - outer, y: center.y - outer, width: outer * 2, height: outer * 2))
-        ring.append(NSBezierPath(ovalIn: NSRect(x: center.x - inner, y: center.y - inner, width: inner * 2, height: inner * 2)))
-        ring.windingRule = .evenOdd
-        NSColor(white: 0.08, alpha: 0.88).setFill()
-        ring.fill()
+        // Glass themes get their surface from the backdrop; solid ones paint the ring here.
+        if let solid = theme.solid {
+            let ring = NSBezierPath(ovalIn: NSRect(x: center.x - outer, y: center.y - outer, width: outer * 2, height: outer * 2))
+            ring.append(NSBezierPath(ovalIn: NSRect(x: center.x - inner, y: center.y - inner, width: inner * 2, height: inner * 2)))
+            ring.windingRule = .evenOdd
+            solid.setFill()
+            ring.fill()
+        }
+        let text = theme.textColor
 
         for (i, op) in ops.enumerated() {
             let a0 = CGFloat(i) * step, a1 = a0 + step
@@ -89,26 +106,27 @@ final class WheelView: NSView {
             slice.appendArc(withCenter: center, radius: outer, startAngle: d0, endAngle: d1, clockwise: true)
             slice.appendArc(withCenter: center, radius: inner, startAngle: d1, endAngle: d0, clockwise: false)
             slice.close()
-            if hover == i { accent.setFill(); slice.fill() }
-            NSColor(white: 1, alpha: 0.12).setStroke()
+            if hover == i { accent.withAlphaComponent(theme.isGlass ? 0.85 : 1).setFill(); slice.fill() }
+            text.withAlphaComponent(0.14).setStroke()
             slice.lineWidth = 1
             slice.stroke()
 
             let mid = a0 + step / 2, r = (inner + outer) / 2
             let fontSize: CGFloat = ops.count > 10 || op.title.count > 9 ? 10.5 : 12.5
             label(op.title, at: CGPoint(x: center.x + sin(mid) * r, y: center.y + cos(mid) * r),
-                  font: .systemFont(ofSize: fontSize, weight: .semibold), color: .white)
+                  font: .systemFont(ofSize: fontSize, weight: .semibold), color: hover == i ? .white : text)
         }
 
-        NSColor(white: 0.14, alpha: 0.95).setFill()
-        NSBezierPath(ovalIn: NSRect(x: center.x - inner + 4, y: center.y - inner + 4, width: (inner - 4) * 2, height: (inner - 4) * 2)).fill()
+        let hub = NSBezierPath(ovalIn: NSRect(x: center.x - inner + 4, y: center.y - inner + 4, width: (inner - 4) * 2, height: (inner - 4) * 2))
+        (theme.solid.map { $0.blended(withFraction: 0.12, of: text) ?? $0 } ?? text.withAlphaComponent(0.08)).setFill()
+        hub.fill()
         let title = hover.map { ops[$0].title } ?? (ops.isEmpty ? "Nothing here" : mode.title)
         label(title, at: CGPoint(x: center.x, y: center.y + 9), font: .systemFont(ofSize: 13, weight: .bold),
-              color: hover == nil ? .white : accent)
+              color: hover == nil ? text : accent)
         let keys: [(String, Mode)] = [("⇧", .convert), ("⌘", .tools), ("⌃", .actions)]
         for (k, (sym, m)) in keys.enumerated() {
             label(sym, at: CGPoint(x: center.x + CGFloat(k - 1) * 20, y: center.y - 13), font: .systemFont(ofSize: 12, weight: .medium),
-                  color: m == mode ? accent : NSColor(white: 1, alpha: 0.45))
+                  color: m == mode ? accent : text.withAlphaComponent(0.45))
         }
     }
 

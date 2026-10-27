@@ -23,20 +23,16 @@ final class HUD {
     private let spinner = NSProgressIndicator()
     private var jobs = 0
 
+    private let content = NSView(frame: NSRect(x: 0, y: 0, width: 260, height: 52))
+
     init() {
-        let bg = NSVisualEffectView(frame: panel.contentRect(forFrameRect: panel.frame))
-        bg.material = .hudWindow
-        bg.state = .active
-        bg.wantsLayer = true
-        bg.layer?.cornerRadius = 12
         spinner.style = .spinning
         spinner.controlSize = .small
         spinner.frame = NSRect(x: 16, y: 18, width: 16, height: 16)
         label.frame = NSRect(x: 42, y: 17, width: 205, height: 18)
         label.lineBreakMode = .byTruncatingTail
-        bg.addSubview(spinner)
-        bg.addSubview(label)
-        panel.contentView = bg
+        content.addSubview(spinner)
+        content.addSubview(label)
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.level = .floating
@@ -45,6 +41,11 @@ final class HUD {
 
     func start(_ text: String) {
         jobs += 1
+        let theme = Theme.current
+        content.removeFromSuperview()
+        content.frame = NSRect(x: 0, y: 0, width: 260, height: 52)
+        panel.contentView = Backdrop.wrap(content, radius: 26, theme: theme)
+        label.textColor = theme.textColor
         label.stringValue = text
         if let f = NSScreen.main?.visibleFrame { panel.setFrameOrigin(NSPoint(x: f.midX - 130, y: f.minY + 80)) }
         spinner.startAnimation(nil)
@@ -155,6 +156,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(item)
         }
         menu.addItem(.separator())
+        let themes = NSMenu()
+        for theme in Theme.all {
+            let item = BlockItem(theme.name + (theme.isGlass ? "" : " (solid)")) { [weak self] in
+                Theme.current = theme
+                self?.previewTheme()
+            }
+            item.state = theme.name == Theme.current.name ? .on : .off
+            item.image = swatch(theme.accent)
+            themes.addItem(item)
+        }
+        let themeItem = NSMenuItem(title: "Theme", action: nil, keyEquivalent: "")
+        themeItem.submenu = themes
+        menu.addItem(themeItem)
+        menu.addItem(BlockItem("Preview Wheel") { [weak self] in self?.previewTheme() })
         let login = BlockItem("Open at Login") {
             let app = SMAppService.mainApp
             do { app.status == .enabled ? try app.unregister() : try app.register() } catch {
@@ -164,6 +179,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(login)
         menu.addItem(BlockItem("Quit Satsuma") { NSApp.terminate(nil) })
+    }
+
+    /// Shows the wheel mid-screen for a moment, as if a photo were being dragged.
+    private func previewTheme() {
+        guard let screen = NSScreen.main?.frame else { return }
+        wheel.show(.convert, files: [URL(fileURLWithPath: "/tmp/Preview.jpg")], at: NSPoint(x: screen.midX, y: screen.midY))
+        wheel.wheel.hover = 1
+        wheel.wheel.needsDisplay = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            if NSEvent.pressedMouseButtons & 1 == 0 { self?.wheel.orderOut(nil) }
+        }
+    }
+
+    private func swatch(_ color: NSColor) -> NSImage {
+        NSImage(size: NSSize(width: 12, height: 12), flipped: false) { r in
+            color.setFill()
+            NSBezierPath(ovalIn: r).fill()
+            return true
+        }
     }
 
     /// Keyboard/mouse alternative to the drag wheel.
