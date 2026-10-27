@@ -10,7 +10,7 @@
     <AssemblyName>Satsuma</AssemblyName>
     <RootNamespace>Satsuma</RootNamespace>
     <ApplicationIcon>Satsuma.ico</ApplicationIcon>
-    <Version>0.4.0</Version>
+    <Version>0.4.5</Version>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="PdfPig" Version="0.1.16" />
