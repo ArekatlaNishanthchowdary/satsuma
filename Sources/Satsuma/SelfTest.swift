@@ -51,6 +51,16 @@ enum SelfTest {
             let unpacked = try tool("Extract", [zip])[0]
             check(try String(contentsOf: unpacked.appendingPathComponent("t.csv")) == String(contentsOf: csv), "zip → extract")
 
+            if Shell.ffmpeg != nil {
+                let webp = try Convert.run(Convert.run(png, to: "jpg"), to: "webp")
+                check(FileManager.default.fileExists(atPath: webp.path), "jpg → webp (ffmpeg)")
+            }
+            if Shell.pandoc != nil {
+                let md = dir.appendingPathComponent("m.md")
+                try "# Title\n\nSome *text*.".write(to: md, atomically: true, encoding: .utf8)
+                check(try Docs.read(Convert.run(md, to: "docx")).string.contains("Title"), "md → docx (pandoc)")
+            }
+
             print("SELFTEST OK (ffmpeg: \(Shell.ffmpeg ?? "none"), pandoc: \(Shell.pandoc ?? "none"))")
         } catch {
             print("FAIL \(error.localizedDescription)")

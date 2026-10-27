@@ -15,7 +15,8 @@ struct Fail: LocalizedError {
 
 enum Shell {
     static func find(_ name: String) -> String? {
-        ["/usr/local/bin/", "/opt/homebrew/bin/", "/usr/bin/"].map { $0 + name }
+        // ~/.local/bin holds standalone builds installed without admin rights (Homebrew no longer ships Intel bottles).
+        [NSHomeDirectory() + "/.local/bin/", "/usr/local/bin/", "/opt/homebrew/bin/", "/usr/bin/"].map { $0 + name }
             .first { FileManager.default.isExecutableFile(atPath: $0) }
     }
     static let ffmpeg = find("ffmpeg")

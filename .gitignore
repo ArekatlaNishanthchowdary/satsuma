@@ -7,3 +7,4 @@ windows/bin/
 windows/obj/
 windows/publish/
 *.exe
+HANDOVER.md
