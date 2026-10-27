@@ -31,6 +31,17 @@ final class WheelPanel: NSPanel {
     func show(_ mode: Mode, files: [URL], at point: NSPoint) {
         applyTheme()
         wheel.mode = mode
+        if files != wheel.files || wheel.sizeText.isEmpty {
+            wheel.thumb = nil
+            wheel.sizeText = Thumbs.describe(files)
+            if let first = files.first {
+                Thumbs.get(first, size: 96) { [weak wheel] image in
+                    guard let wheel, wheel.files.first == first else { return }
+                    wheel.thumb = image
+                    wheel.needsDisplay = true
+                }
+            }
+        }
         wheel.files = files
         wheel.ops = Catalog.ops(mode, files)
         wheel.hover = nil
@@ -45,6 +56,8 @@ final class WheelView: NSView {
     var files: [URL] = []
     var ops: [Op] = []
     var hover: Int?
+    var thumb: NSImage?
+    var sizeText = ""
     var onPick: ((Op, [URL], Mode) -> Void)?
     var theme = Theme.current
 
@@ -134,12 +147,25 @@ final class WheelView: NSView {
         let hub = NSBezierPath(ovalIn: NSRect(x: center.x - inner, y: center.y - inner, width: inner * 2, height: inner * 2))
         (theme.solid.map { $0.blended(withFraction: 0.12, of: text) ?? $0 } ?? text.withAlphaComponent(0.08)).setFill()
         hub.fill()
-        let title = hover.map { ops[$0].title } ?? (ops.isEmpty ? "Nothing here" : mode.title)
-        label(title, at: CGPoint(x: center.x, y: center.y + 9), font: .systemFont(ofSize: 13, weight: .bold),
-              color: hover == nil ? text : accent)
+        // Hub: the file's thumbnail (or the hovered option / mode name), its size, then the mode keys.
+        let top = CGPoint(x: center.x, y: center.y + 15)
+        if let h = hover {
+            label(ops[h].title, at: top, font: .systemFont(ofSize: 13, weight: .bold), color: accent)
+        } else if let thumb {
+            let t: CGFloat = 34, s = thumb.size, scale = t / max(s.width, s.height, 1)
+            let box = NSRect(x: top.x - s.width * scale / 2, y: top.y - s.height * scale / 2, width: s.width * scale, height: s.height * scale)
+            NSGraphicsContext.saveGraphicsState()
+            NSBezierPath(roundedRect: box, xRadius: 5, yRadius: 5).addClip()
+            thumb.draw(in: box)
+            NSGraphicsContext.restoreGraphicsState()
+        } else {
+            label(ops.isEmpty && !files.isEmpty ? "Nothing here" : mode.title, at: top, font: .systemFont(ofSize: 13, weight: .bold), color: text)
+        }
+        label(sizeText, at: CGPoint(x: center.x, y: center.y - 9), font: .systemFont(ofSize: 10.5, weight: .semibold),
+              color: text.withAlphaComponent(0.75))
         let keys: [(String, Mode)] = [("⇧", .convert), ("⌘", .tools), ("⌃", .actions)]
         for (k, (sym, m)) in keys.enumerated() {
-            label(sym, at: CGPoint(x: center.x + CGFloat(k - 1) * 20, y: center.y - 13), font: .systemFont(ofSize: 12, weight: .medium),
+            label(sym, at: CGPoint(x: center.x + CGFloat(k - 1) * 20, y: center.y - 27), font: .systemFont(ofSize: 11, weight: .medium),
                   color: m == mode ? accent : text.withAlphaComponent(0.45))
         }
     }
@@ -154,7 +180,7 @@ final class WheelView: NSView {
         "Trim Silence": "scissors", "Mono": "hifispeaker", "Split Pages": "rectangle.split.2x1",
         "Merge": "rectangle.stack", "Extract": "archivebox",
         "AirDrop": "dot.radiowaves.left.and.right", "Copy": "doc.on.doc", "Copy Path": "doc.text",
-        "Terminal": "terminal", "Quick Look": "eye", "Move To…": "folder",
+        "Terminal": "terminal", "Quick Look": "eye", "Float": "pip", "Move To…": "folder",
     ]
 
     private func label(_ text: String, at p: CGPoint, font: NSFont, color: NSColor) {

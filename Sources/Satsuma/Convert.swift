@@ -95,6 +95,7 @@ enum Convert {
         case .sheet: return try Sheets.convert(src, to: ext)
         case .subtitle: return try Subs.convert(src, to: ext)
         case .archive: return try Archive.convert(src, to: ext)
+        case .slides: return try Slides.convert(src, to: ext)
         case .other: throw Fail("Satsuma doesn't know how to convert \(src.lastPathComponent)")
         }
     }
@@ -131,6 +132,8 @@ enum Img {
             guard let page = PDFPage(image: NSImage(cgImage: image, size: .zero)) else { throw Fail("Couldn't make a PDF page") }
             doc.insert(page, at: 0)
             guard doc.write(to: url) else { throw Fail("Couldn't write \(url.lastPathComponent)") }
+        case "docx":
+            try DocxImage.write(image, to: url)
         default:
             guard let type = UTType(filenameExtension: ext),
                   let dest = CGImageDestinationCreateWithURL(url as CFURL, type.identifier as CFString, 1, nil)
@@ -301,23 +304,37 @@ enum PDFs {
         guard doc.write(to: url, withOptions: options) else { throw Fail("Couldn't write \(url.lastPathComponent)") }
     }
 
-    static func convert(_ src: URL, to ext: String) throws -> URL {
+    /// `near` names the output when `src` is an intermediate temp PDF.
+    static func convert(_ src: URL, to ext: String, near: URL? = nil) throws -> URL {
         let doc = try open(src)
+        let base = near ?? src
         switch ext {
         case "png", "jpg":
             if doc.pageCount == 1 {
-                let out = output(for: src, ext: ext)
+                let out = output(for: base, ext: ext)
                 try Img.write(render(doc.page(at: 0)!), to: out)
                 return out
             }
-            let dir = try outputFolder(for: src, suffix: " pages")
+            let dir = try outputFolder(for: base, suffix: " pages")
             for i in 0..<doc.pageCount {
                 try Img.write(render(doc.page(at: i)!), to: dir.appendingPathComponent("page \(i + 1).\(ext)"))
             }
             return dir
         case "txt", "md":
-            let out = output(for: src, ext: ext)
+            let out = output(for: base, ext: ext)
             try (doc.string ?? "").write(to: out, atomically: true, encoding: .utf8)
+            return out
+        case "pptx":
+            let out = output(for: base, ext: ext)
+            try FileManager.default.moveItem(at: Shell.office(src, to: "pptx", infilter: "impress_pdf_import"), to: out)
+            return out
+        case "xlsx":
+            // ponytail: one row per text line, columns split on runs of 2+ spaces; real table detection is a layout-analysis project.
+            let rows = (doc.string ?? "").components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+                .map { $0.replacingOccurrences(of: "\\s{2,}|\t", with: "\u{1F}", options: .regularExpression).components(separatedBy: "\u{1F}") }
+            let out = output(for: base, ext: ext)
+            try Sheets.write(rows, to: out)
             return out
         default:
             let text = NSMutableAttributedString()
@@ -325,7 +342,7 @@ enum PDFs {
                 if let a = doc.page(at: i)?.attributedString { text.append(a) }
                 text.append(NSAttributedString(string: "\n\n"))
             }
-            let out = output(for: src, ext: ext)
+            let out = output(for: base, ext: ext)
             try Docs.write(text, to: out)
             return out
         }
@@ -445,6 +462,11 @@ enum Docs {
             try text.string.write(to: url, atomically: true, encoding: .utf8)
         case "pdf":
             try onMain { try printPDF(text, to: url) }
+        case "epub":
+            guard let pandoc = Shell.pandoc else { throw Fail("EPUB needs pandoc") }
+            let html = try tempDir().appendingPathComponent(url.deletingPathExtension().lastPathComponent + ".html")
+            try write(text, to: html)
+            try Shell.run(pandoc, [html.path, "-o", url.path, "--metadata", "title=" + url.deletingPathExtension().lastPathComponent])
         default:
             let types: [String: NSAttributedString.DocumentType] =
                 ["docx": .officeOpenXML, "rtf": .rtf, "html": .html, "odt": .openDocument, "doc": .docFormat]
@@ -487,6 +509,8 @@ enum Sheets {
     static func read(_ url: URL) throws -> [[String]] {
         switch normExt(url) {
         case "xlsx": return try XLSX.read(url)
+        case "ods": return try ODS.read(url)
+        case "xls": return try XLSX.read(Shell.office(url, to: "xlsx"))
         case "tsv": return parse(try String(contentsOf: url), sep: "\t")
         default: return parse(try String(contentsOf: url), sep: ",")
         }
@@ -495,6 +519,8 @@ enum Sheets {
     static func write(_ rows: [[String]], to url: URL) throws {
         switch url.pathExtension.lowercased() {
         case "xlsx": try XLSX.write(rows, to: url)
+        case "ods": try ODS.write(rows, to: url)
+        case "pdf": try TablePDF.write(rows, to: url)
         case "tsv": try format(rows, sep: "\t").write(to: url, atomically: true, encoding: .utf8)
         default: try format(rows, sep: ",").write(to: url, atomically: true, encoding: .utf8)
         }

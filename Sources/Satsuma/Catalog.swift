@@ -22,7 +22,7 @@ func each(_ title: String, _ f: @escaping (URL) throws -> URL) -> Op {
 }
 
 enum Kind {
-    case image, audio, video, pdf, document, sheet, subtitle, archive, other
+    case image, audio, video, pdf, document, sheet, slides, subtitle, archive, other
 
     static func of(_ url: URL) -> Kind {
         var isDir: ObjCBool = false
@@ -35,7 +35,8 @@ enum Kind {
         case "pdf": return .pdf
         case "docx", "doc", "rtf", "rtfd", "txt", "md", "html", "odt", "webarchive": return .document
         case "epub": return Shell.pandoc == nil ? .other : .document
-        case "csv", "tsv", "xlsx": return .sheet
+        case "csv", "tsv", "xlsx", "ods", "xls": return .sheet
+        case "ppt", "pptx", "odp": return .slides
         case "srt", "vtt": return .subtitle
         case "zip", "tar", "tar.gz", "gz", "rar", "7z": return .archive
         default: return .other
@@ -69,14 +70,15 @@ enum Catalog {
     }
 
     static func targets(_ kind: Kind) -> [String] {
-        let ff = Shell.ffmpeg != nil
+        let ff = Shell.ffmpeg != nil, office = Shell.soffice != nil
         switch kind {
-        case .image: return ["jpg", "png", "heic", "tiff", "bmp", "gif", "pdf"] + (ff ? ["webp", "avif"] : [])
+        case .image: return ["jpg", "png", "heic", "tiff", "bmp", "gif", "pdf", "docx"] + (ff ? ["webp", "avif"] : [])
         case .audio: return ff ? ["mp3", "m4a", "wav", "flac", "ogg", "opus", "aiff", "wma"] : ["m4a", "wav", "aiff", "flac"]
         case .video: return ff ? ["mp4", "mov", "mkv", "webm", "avi", "wmv", "gif", "mp3", "m4a"] : ["mp4", "mov", "m4a"]
-        case .pdf: return ["png", "jpg", "txt", "md", "docx", "rtf", "html"]
+        case .pdf: return ["png", "jpg", "txt", "md", "docx", "rtf", "html", "xlsx"] + (Shell.pandoc != nil ? ["epub"] : []) + (office ? ["pptx"] : [])
         case .document: return ["pdf", "docx", "rtf", "html", "txt", "md", "odt"] + (Shell.pandoc != nil ? ["epub"] : [])
-        case .sheet: return ["csv", "tsv", "xlsx"]
+        case .sheet: return ["csv", "tsv", "xlsx", "ods", "pdf"]
+        case .slides: return office ? ["pdf", "png", "jpg"] : []
         case .subtitle: return ["srt", "vtt", "txt"]
         case .archive: return ["zip", "tar", "tar.gz"]
         case .other: return []
@@ -161,6 +163,10 @@ enum Actions {
             let dir = isDir.boolValue ? urls[0] : urls[0].deletingLastPathComponent()
             NSWorkspace.shared.open([dir], withApplicationAt: URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app"),
                                     configuration: NSWorkspace.OpenConfiguration())
+            return []
+        },
+        Op(title: "Float") { urls in
+            urls.prefix(8).forEach(Float.show)
             return []
         },
         Op(title: "Quick Look") { urls in

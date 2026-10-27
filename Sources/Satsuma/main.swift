@@ -9,7 +9,14 @@ if let i = CommandLine.arguments.firstIndex(of: "--shot"), CommandLine.arguments
     view.mode = ["tools": .tools, "actions": .actions][CommandLine.arguments[i + 1]] ?? .convert
     view.files = [URL(fileURLWithPath: "/tmp/Vacation.jpg")]
     view.ops = Catalog.ops(view.mode, view.files)
-    view.hover = 0
+    view.hover = view.mode == .convert ? nil : 0
+    view.sizeText = "2.4 MB"
+    view.thumb = NSImage(size: NSSize(width: 96, height: 72), flipped: false) { r in
+        NSGradient(starting: .systemOrange, ending: .systemPurple)!.draw(in: r, angle: -90)
+        NSColor(calibratedRed: 0.16, green: 0.2, blue: 0.28, alpha: 1).setFill()
+        NSBezierPath(ovalIn: NSRect(x: -40, y: -34, width: 140, height: 68)).fill()
+        return true
+    }
     let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds)!
     view.cacheDisplay(in: view.bounds, to: rep)
     try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: CommandLine.arguments[i + 2]))

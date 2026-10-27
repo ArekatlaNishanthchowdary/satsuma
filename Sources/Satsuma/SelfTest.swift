@@ -23,6 +23,9 @@ enum SelfTest {
             let xlsx = try Convert.run(csv, to: "xlsx")
             check(try Sheets.read(xlsx) == rows, "csv → xlsx → rows")
             check(try Sheets.read(Convert.run(xlsx, to: "tsv")) == rows, "xlsx → tsv")
+            let ods = try Convert.run(csv, to: "ods")
+            check(try Sheets.read(ods) == rows, "csv → ods → rows")
+            check(PDFDocument(url: try Convert.run(ods, to: "pdf"))?.string?.contains("qty") == true, "ods → pdf table")
 
             let srt = dir.appendingPathComponent("s.srt")
             try "1\n00:00:01,000 --> 00:00:02,500\nHello\n\n2\n00:00:03,000 --> 00:00:04,000\nWorld\n"
@@ -36,6 +39,10 @@ enum SelfTest {
             check(try String(contentsOf: Convert.run(docx, to: "txt")).contains("Hello Satsuma"), "txt → docx → txt")
             let pdf = try Convert.run(txt, to: "pdf")
             check(PDFDocument(url: pdf)?.string?.contains("Hello Satsuma") == true, "txt → pdf")
+            check(try Sheets.read(Convert.run(pdf, to: "xlsx")).contains { $0.contains("Hello Satsuma") }, "pdf → xlsx")
+            if Shell.pandoc != nil {
+                check(try Docs.read(Convert.run(pdf, to: "epub")).string.contains("Hello Satsuma"), "pdf → epub (pandoc)")
+            }
 
             let png = dir.appendingPathComponent("i.png")
             let ctx = CGContext(data: nil, width: 64, height: 48, bitsPerComponent: 8, bytesPerRow: 0,
@@ -46,6 +53,9 @@ enum SelfTest {
             check(try Img.load(Convert.run(png, to: "jpg")).width == 64, "png → jpg")
             check(PDFDocument(url: try Convert.run(png, to: "pdf"))?.pageCount == 1, "png → pdf")
             check(try Img.load(tool("Resize 50%", [png])[0]).width == 32, "resize 50%")
+            let imgDocx = try Convert.run(png, to: "docx")
+            check(String(decoding: try Shell.run("/usr/bin/unzip", ["-Z1", imgDocx.path]), as: UTF8.self).contains("word/media/image1.png"), "png → docx")
+            check(try Img.load(Convert.run(png, to: "heic")).width == 64, "png → heic")
 
             let zip = try tool("Zip", [csv])[0]
             let unpacked = try tool("Extract", [zip])[0]
@@ -61,11 +71,19 @@ enum SelfTest {
                 check(try Docs.read(Convert.run(md, to: "docx")).string.contains("Title"), "md → docx (pandoc)")
             }
 
+            if Shell.soffice != nil {
+                check(try Sheets.read(Convert.run(Shell.office(ods, to: "xls"), to: "csv")) == rows, "xls → csv (LibreOffice)")
+                let odp = try Shell.office(pdf, to: "odp", infilter: "impress_pdf_import")
+                check(PDFDocument(url: try Convert.run(odp, to: "pdf"))?.string?.contains("Hello") == true, "slides → pdf (LibreOffice)")
+                check((try Convert.run(pdf, to: "pptx").resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) > 1000, "pdf → pptx (LibreOffice)")
+            } else { print("skip slides, xls, pdf → pptx (no LibreOffice)") }
+            check(Thumbs.describe([csv]).hasSuffix("bytes") && Thumbs.describe([csv, png]).hasPrefix("2 items"), "size line")
+
             let missing = WheelView.symbols.filter { NSImage(systemSymbolName: $0.value, accessibilityDescription: nil) == nil }
             check(missing.isEmpty, "SF Symbols resolve \(missing.keys.sorted())")
             check(Click.wav().count == 44 + 1323 * 2, "click sound synthesized")
 
-            print("SELFTEST OK (ffmpeg: \(Shell.ffmpeg ?? "none"), pandoc: \(Shell.pandoc ?? "none"))")
+            print("SELFTEST OK (ffmpeg: \(Shell.ffmpeg ?? "none"), pandoc: \(Shell.pandoc ?? "none"), LibreOffice: \(Shell.soffice ?? "none"))")
         } catch {
             print("FAIL \(error.localizedDescription)")
             exit(1)
