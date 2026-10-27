@@ -15,6 +15,10 @@ A ring of options opens around the pointer. Keep dragging, drop the file on a sl
 next to the original and shown in Finder. Drop in the middle to cancel. Tap a different key to switch wheels.
 Prefer clicking? Use **Choose Files…** in the menu bar icon.
 
+The wheel and progress card use **Liquid Glass** on macOS 26, and a blur on older systems. Pick a look under
+**Theme** in the menu bar icon: Tangerine, Clear Glass, Lime, Blueberry, Grape, Strawberry, Mint or Graphite (glass),
+or Midnight, Paper, Neon or Sunset (solid). **Preview Wheel** shows the current theme.
+
 Everything runs locally. Nothing is uploaded, and no Accessibility permission is needed.
 
 ## Formats
