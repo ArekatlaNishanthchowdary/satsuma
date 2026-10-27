@@ -177,6 +177,8 @@ class Controller
         }
         menu.Items.Add(themes);
         menu.Items.Add("Preview Wheel", null, (_, _) => Preview());
+        menu.Items.Add(new WF.ToolStripMenuItem("Click Sound on Hover", null, (_, _) => { Click.Enabled = !Click.Enabled; Click.Play(); })
+            { Checked = Click.Enabled });
         menu.Items.Add(new WF.ToolStripSeparator());
 
         foreach (var (name, path, id) in new[] { ("ffmpeg", Shell.FFmpeg, "Gyan.FFmpeg"), ("pandoc", Shell.Pandoc, "JohnMacFarlane.Pandoc") })

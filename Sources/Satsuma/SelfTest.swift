@@ -61,6 +61,10 @@ enum SelfTest {
                 check(try Docs.read(Convert.run(md, to: "docx")).string.contains("Title"), "md → docx (pandoc)")
             }
 
+            let missing = WheelView.symbols.filter { NSImage(systemSymbolName: $0.value, accessibilityDescription: nil) == nil }
+            check(missing.isEmpty, "SF Symbols resolve \(missing.keys.sorted())")
+            check(Click.wav().count == 44 + 1323 * 2, "click sound synthesized")
+
             print("SELFTEST OK (ffmpeg: \(Shell.ffmpeg ?? "none"), pandoc: \(Shell.pandoc ?? "none"))")
         } catch {
             print("FAIL \(error.localizedDescription)")

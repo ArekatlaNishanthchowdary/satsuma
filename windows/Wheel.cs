@@ -74,7 +74,9 @@ class WheelWindow : Window
             files = dropped.ToList();
             ops = Catalog.Ops(Mode, files);
         }
-        hover = Index(e.GetPosition(surface));
+        var next = Index(e.GetPosition(surface));
+        if (next != hover && next != null) Click.Play();
+        hover = next;
         e.Effects = hover == null ? DragDropEffects.None : DragDropEffects.Copy;
         e.Handled = true;
         surface.InvalidateVisual();
@@ -150,8 +152,15 @@ class WheelWindow : Window
             double a0 = i * Step, mid = a0 + Step / 2;
             if (hover == i) dc.DrawGeometry(new SolidColorBrush(Theme.WithAlpha(theme.Accent, theme.IsGlass ? 0.88 : 1)), null, Slice(i, ring));
             if (ops.Count > 1) dc.DrawLine(sep, At(a0, Inner), At(a0, Outer));
-            double size = ops.Count > 10 || ops[i].Title.Length > 9 ? 11 : 13;
-            Label(dc, ops[i].Title, At(mid, (Inner + Outer) / 2), size, FontWeights.SemiBold, hover == i ? Colors.White : text);
+            var color = hover == i ? Colors.White : text;
+            var at = At(mid, (Inner + Outer) / 2);
+            if (Icons.TryGetValue(ops[i].Title, out var glyph))
+            {
+                // Tools and actions: icon over a small caps label. Format slices stay text-only.
+                Label(dc, glyph.ToString(), new Point(at.X, at.Y - 9), 18, FontWeights.Normal, color, IconFont);
+                Label(dc, ops[i].Title.ToUpperInvariant(), new Point(at.X, at.Y + 12), ops[i].Title.Length > 11 ? 9 : 10, FontWeights.Bold, color);
+            }
+            else Label(dc, ops[i].Title, at, ops.Count > 10 ? 12 : 14.5, FontWeights.Bold, color);
         }
 
         var title = hover is int h && h < ops.Count ? ops[h].Title : files.Count == 0 ? Mode.Title() : ops.Count == 0 ? "Nothing here" : Mode.Title();
@@ -163,11 +172,23 @@ class WheelWindow : Window
     }
 
     static readonly FontFamily Font = new("Segoe UI Variable Text, Segoe UI");
+    // Segoe Fluent Icons ships with Windows 11; MDL2 Assets (same code points) with Windows 10.
+    static readonly FontFamily IconFont = new("Segoe Fluent Icons, Segoe MDL2 Assets");
 
-    void Label(DrawingContext dc, string s, Point p, double size, FontWeight weight, Color color)
+    static readonly Dictionary<string, char> Icons = new()
+    {
+        ["Compress"] = '', ["Resize 50%"] = '', ["Rotate"] = '', ["Flip"] = '',
+        ["Grayscale"] = '', ["Strip Metadata"] = '', ["Make PDF"] = '', ["Zip"] = '',
+        ["Snapshot"] = '', ["Extract Audio"] = '', ["Mute"] = '', ["Speed 2×"] = '',
+        ["Join"] = '', ["Normalize"] = '', ["Trim Silence"] = '', ["Mono"] = '',
+        ["Split Pages"] = '', ["Merge"] = '', ["Extract"] = '',
+        ["Copy"] = '', ["Copy Path"] = '', ["Terminal"] = '', ["Open"] = '', ["Move To…"] = '',
+    };
+
+    void Label(DrawingContext dc, string s, Point p, double size, FontWeight weight, Color color, FontFamily family = null)
     {
         var ft = new FormattedText(s, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-            new Typeface(Font, FontStyles.Normal, weight, FontStretches.Normal), size, new SolidColorBrush(color),
+            new Typeface(family ?? Font, FontStyles.Normal, weight, FontStretches.Normal), size, new SolidColorBrush(color),
             VisualTreeHelper.GetDpi(surface).PixelsPerDip);
         var at = new Point(p.X - ft.Width / 2, p.Y - ft.Height / 2);
         if (theme.IsGlass)

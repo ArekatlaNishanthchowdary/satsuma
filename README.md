@@ -32,6 +32,8 @@
 ## Why Satsuma
 
 - **No windows, no upload page, no "choose output format" dialog.** The wheel appears right under your pointer, mid-drag.
+- **Feels physical.** Every tool and action has its own icon, and a soft mechanical *click* (plus a trackpad tap on Mac)
+  marks each option as you sweep across the wheel. Turn it off with **Click Sound on Hover**.
 - **Private by design.** Every conversion runs on your computer. Nothing is uploaded, and there's no account, no telemetry and no network calls.
 - **Free and open source.** MIT licensed, with no trial limit and no subscription.
 - **Runs where Tangerine doesn't.** Built for **Intel Macs** (and Apple Silicon from source) and for **Windows**.

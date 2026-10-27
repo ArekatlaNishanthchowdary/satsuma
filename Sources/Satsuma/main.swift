@@ -1,6 +1,21 @@
 import AppKit
 import ServiceManagement
 
+// `--shot <mode> <out.png>`: draws one wheel (solid Midnight theme, since glass needs a live window) for checking layouts.
+if let i = CommandLine.arguments.firstIndex(of: "--shot"), CommandLine.arguments.count > i + 2 {
+    _ = NSApplication.shared
+    let view = WheelView(frame: NSRect(x: 0, y: 0, width: WheelPanel.size, height: WheelPanel.size))
+    view.theme = Theme.all.first { $0.name == "Midnight" }!
+    view.mode = ["tools": .tools, "actions": .actions][CommandLine.arguments[i + 1]] ?? .convert
+    view.files = [URL(fileURLWithPath: "/tmp/Vacation.jpg")]
+    view.ops = Catalog.ops(view.mode, view.files)
+    view.hover = 0
+    let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds)!
+    view.cacheDisplay(in: view.bounds, to: rep)
+    try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: CommandLine.arguments[i + 2]))
+    exit(0)
+}
+
 if CommandLine.arguments.contains("--selftest") {
     _ = NSApplication.shared  // text → PDF printing needs an app object
     SelfTest.run()
@@ -170,6 +185,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         themeItem.submenu = themes
         menu.addItem(themeItem)
         menu.addItem(BlockItem("Preview Wheel") { [weak self] in self?.previewTheme() })
+        let click = BlockItem("Click Sound on Hover") { Click.enabled.toggle(); Click.play() }
+        click.state = Click.enabled ? .on : .off
+        menu.addItem(click)
         let login = BlockItem("Open at Login") {
             let app = SMAppService.mainApp
             do { app.status == .enabled ? try app.unregister() : try app.register() } catch {

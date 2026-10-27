@@ -72,7 +72,11 @@ final class WheelView: NSView {
 
     private func track(_ sender: NSDraggingInfo) -> NSDragOperation {
         let i = index(at: convert(sender.draggingLocation, from: nil))
-        if i != hover { hover = i; needsDisplay = true }
+        if i != hover {
+            if i != nil { Click.play() }
+            hover = i
+            needsDisplay = true
+        }
         return i == nil ? [] : .copy
     }
 
@@ -112,12 +116,22 @@ final class WheelView: NSView {
             slice.stroke()
 
             let mid = a0 + step / 2, r = (inner + outer) / 2
-            let fontSize: CGFloat = ops.count > 10 || op.title.count > 9 ? 10.5 : 12.5
-            label(op.title, at: CGPoint(x: center.x + sin(mid) * r, y: center.y + cos(mid) * r),
-                  font: .systemFont(ofSize: fontSize, weight: .semibold), color: hover == i ? .white : text)
+            let at = CGPoint(x: center.x + sin(mid) * r, y: center.y + cos(mid) * r)
+            let color = hover == i ? NSColor.white : text
+            if let name = Self.symbols[op.title],
+               let icon = NSImage(systemSymbolName: name, accessibilityDescription: op.title)?
+                   .withSymbolConfiguration(.init(pointSize: 17, weight: .medium).applying(.init(paletteColors: [color]))) {
+                // Tools and actions: icon over a small caps label. Format slices stay text-only.
+                let s = icon.size
+                icon.draw(in: NSRect(x: at.x - s.width / 2, y: at.y + 10 - s.height / 2, width: s.width, height: s.height))
+                label(op.title.uppercased(), at: CGPoint(x: at.x, y: at.y - 11),
+                      font: .systemFont(ofSize: op.title.count > 11 ? 9 : 10, weight: .bold), color: color)
+            } else {
+                label(op.title, at: at, font: .systemFont(ofSize: ops.count > 10 ? 12 : 14.5, weight: .bold), color: color)
+            }
         }
 
-        let hub = NSBezierPath(ovalIn: NSRect(x: center.x - inner + 4, y: center.y - inner + 4, width: (inner - 4) * 2, height: (inner - 4) * 2))
+        let hub = NSBezierPath(ovalIn: NSRect(x: center.x - inner, y: center.y - inner, width: inner * 2, height: inner * 2))
         (theme.solid.map { $0.blended(withFraction: 0.12, of: text) ?? $0 } ?? text.withAlphaComponent(0.08)).setFill()
         hub.fill()
         let title = hover.map { ops[$0].title } ?? (ops.isEmpty ? "Nothing here" : mode.title)
@@ -129,6 +143,19 @@ final class WheelView: NSView {
                   color: m == mode ? accent : text.withAlphaComponent(0.45))
         }
     }
+
+    /// SF Symbols for tool and action slices (all available on macOS 13).
+    static let symbols: [String: String] = [
+        "Compress": "arrow.down.right.and.arrow.up.left", "Resize 50%": "arrow.up.left.and.arrow.down.right",
+        "Rotate": "rotate.right", "Flip": "arrow.left.and.right.righttriangle.left.righttriangle.right",
+        "Grayscale": "circle.lefthalf.filled", "Strip Metadata": "tag.slash", "Read QR Code": "qrcode.viewfinder",
+        "Make PDF": "doc.richtext", "Zip": "doc.zipper", "Snapshot": "camera", "Extract Audio": "waveform",
+        "Mute": "speaker.slash", "Speed 2×": "hare", "Join": "link", "Normalize": "speaker.wave.2",
+        "Trim Silence": "scissors", "Mono": "hifispeaker", "Split Pages": "rectangle.split.2x1",
+        "Merge": "rectangle.stack", "Extract": "archivebox",
+        "AirDrop": "dot.radiowaves.left.and.right", "Copy": "doc.on.doc", "Copy Path": "doc.text",
+        "Terminal": "terminal", "Quick Look": "eye", "Move To…": "folder",
+    ]
 
     private func label(_ text: String, at p: CGPoint, font: NSFont, color: NSColor) {
         let s = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: color])
