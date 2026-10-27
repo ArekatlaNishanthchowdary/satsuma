@@ -3,6 +3,17 @@
 An open-source, offline file converter for the Mac menu bar, inspired by [Tangerine](https://tangerineformac.com/).
 Built for **Intel Macs** (and Apple Silicon with `ARCH=arm64`), macOS 13 or later.
 
+## Download
+
+Grab the latest installers from [Releases](https://github.com/ArekatlaNishanthchowdary/satsuma/releases/latest):
+
+- **Mac (Intel):** `Satsuma-<version>-mac-intel.dmg`. Open it, drag Satsuma to Applications, then right-click → **Open** the first time.
+- **Windows (x64):** `Satsuma-<version>-windows-x64.exe`. Run it; if SmartScreen appears, choose **More info → Run anyway**.
+
+Neither is code-signed, so both systems ask once.
+
+## How it works
+
 Drag any file in Finder, then **tap a key without letting go**:
 
 | Key | Wheel | What's on it |
