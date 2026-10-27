@@ -70,3 +70,28 @@ The app is ad-hoc signed, so on first launch right-click it and choose **Open**.
 ## License
 
 MIT
+
+## Windows
+
+`windows/` holds the Windows version: same wheel, same 12 themes, same converters, with Windows keys.
+
+| Key (tap mid-drag) | Wheel |
+|---|---|
+| Shift | Convert |
+| Ctrl | Tools |
+| Alt | Actions (Copy, Copy Path, Terminal, Open, Move To…) |
+
+It lives in the system tray. Click the orange icon for **Choose Files…**, **Theme**, **Preview Wheel**, **Show in Send To menu**
+(adds right-click → Send to → Satsuma) and **Start with Windows**.
+
+It uses Windows' own encoders (MP3, M4A, WAV, WMA, FLAC, MP4, WMV), PDF renderer and `tar.exe`, plus PDFsharp (MIT) and PdfPig (Apache-2.0).
+`winget install ffmpeg` and `winget install pandoc` add the same extras as on the Mac; the tray menu offers to install them.
+Glass on Windows is drawn (translucent layers, tint, highlight); it doesn't blur what's behind.
+
+```powershell
+cd windows
+dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o publish
+publish\Satsuma.exe --selftest
+```
+
+The exe is unsigned, so SmartScreen asks once: **More info → Run anyway**.
