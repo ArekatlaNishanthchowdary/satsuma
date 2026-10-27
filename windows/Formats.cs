@@ -178,7 +178,7 @@ static class Pdfs
         doc.Save(outPath);
     }
 
-    static string Edit(string src, string suffix, PdfDocumentOpenMode mode, Action<PdfDocument> f)
+    public static string Edit(string src, string suffix, PdfDocumentOpenMode mode, Action<PdfDocument> f)
     {
         using var doc = PdfReader.Open(src, mode);
         f(doc);
@@ -424,6 +424,7 @@ static class Sheets
             case ".ods": Ods.Write(rows, path); break;
             case ".pdf": Pdfs.FromTable(rows, path); break;
             case ".tsv": File.WriteAllText(path, Format(rows, '\t')); break;
+            case ".json": Data.WriteRows(rows, path); break;
             default: File.WriteAllText(path, Format(rows, ',')); break;
         }
     }
@@ -587,41 +588,6 @@ static class Slides
         var outPath = Paths.Output(src, "pdf");
         File.Move(pdf, outPath);
         return outPath;
-    }
-}
-
-static class Subs
-{
-    record Cue(string Start, string End, string Text);
-
-    public static string Convert(string src, string ext)
-    {
-        var cues = Parse(File.ReadAllText(src));
-        var outPath = Paths.Output(src, ext);
-        File.WriteAllText(outPath, ext switch
-        {
-            "srt" => string.Join("\n", cues.Select((c, i) => $"{i + 1}\n{Time(c.Start, true)} --> {Time(c.End, true)}\n{c.Text}\n")),
-            "vtt" => "WEBVTT\n\n" + string.Join("\n", cues.Select(c => $"{Time(c.Start, false)} --> {Time(c.End, false)}\n{c.Text}\n")),
-            _ => string.Join("\n", cues.Select(c => c.Text)) + "\n",
-        });
-        return outPath;
-    }
-
-    static List<Cue> Parse(string text) => text.Replace("\r\n", "\n").Split("\n\n").Select(block =>
-    {
-        var lines = block.Split('\n');
-        int i = Array.FindIndex(lines, l => l.Contains("-->"));
-        if (i < 0) return null;
-        var parts = lines[i].Split("-->").Select(p => p.Trim()).ToArray();
-        return new Cue(parts[0], parts[1].Split(' ')[0], string.Join("\n", lines.Skip(i + 1)).Trim('\n'));  // drop VTT cue settings
-    }).Where(c => c != null).ToList();
-
-    /// <summary>SRT wants "00:00:01,000", VTT "00:00:01.000" (hours optional in VTT).</summary>
-    static string Time(string t, bool comma)
-    {
-        t = t.Replace(',', '.');
-        if (t.Split(':').Length == 2) t = "00:" + t;
-        return comma ? t.Replace('.', ',') : t;
     }
 }
 

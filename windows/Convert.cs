@@ -112,6 +112,8 @@ static class Converter
         Kind.Subtitle => Subs.Convert(src, ext),
         Kind.Archive => Archive.Convert(src, ext),
         Kind.Slides => Slides.Convert(src, ext),
+        Kind.Data => Data.Convert(src, ext),
+        Kind.Font => Fonts.Convert(src, ext),
         _ => throw new Fail($"Satsuma doesn't know how to convert {Path.GetFileName(src)}"),
     };
 }
@@ -156,6 +158,7 @@ static class Img
         }
         if (ext == "pdf") { Pdfs.FromImages(new[] { img }, path); return; }
         if (ext == "docx") { Docs.WriteImage(img, path); return; }
+        if (ext is "ico" or "icns") { IconFile.Write(img, path); return; }
         if (ext is "heic" or "heif") { SaveHeic(img, path, quality); return; }
         BitmapEncoder enc = ext switch
         {

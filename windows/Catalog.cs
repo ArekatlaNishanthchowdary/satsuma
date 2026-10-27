@@ -12,7 +12,7 @@ enum Mode { Convert, Tools, Actions }
 /// <summary>One slice of the wheel. <c>OnUiThread</c> ops (actions) touch the clipboard or show dialogs.</summary>
 record Op(string Title, Func<List<string>, List<string>> Run, bool OnUiThread = false);
 
-enum Kind { Image, Audio, Video, Pdf, Document, Sheet, Slides, Subtitle, Archive, Other }
+enum Kind { Image, Audio, Video, Pdf, Document, Sheet, Slides, Subtitle, Archive, Data, Font, Other }
 
 static class Catalog
 {
@@ -42,7 +42,9 @@ static class Catalog
             "epub" => Shell.Pandoc == null ? Kind.Other : Kind.Document,
             "csv" or "tsv" or "xlsx" or "ods" or "xls" => Kind.Sheet,
             "ppt" or "pptx" or "odp" => Kind.Slides,
-            "srt" or "vtt" => Kind.Subtitle,
+            "srt" or "vtt" or "ass" or "ssa" or "lrc" or "sbv" => Kind.Subtitle,
+            "json" or "xml" => Kind.Data,
+            "ttf" or "otf" or "woff" => Kind.Font,
             "zip" or "tar" or "tar.gz" or "gz" or "rar" or "7z" => Kind.Archive,
             _ => Kind.Other,
         };
@@ -57,12 +59,13 @@ static class Catalog
         {
             case Mode.Convert:
                 var own = files.Select(NormExt).Distinct().ToList();
-                return Targets(kind).Where(t => !(own.Count == 1 && own[0] == t))
-                    .Select(ext => Each(ext.ToUpperInvariant(), f => Converter.Run(f, ext))).ToList();
+                var targets = kind == Kind.Font ? files.SelectMany(Fonts.Targets).Distinct().ToList() : Targets(kind);
+                return Layout.Apply(targets.Where(t => !(own.Count == 1 && own[0] == t))
+                    .Select(ext => Each(ext.ToUpperInvariant(), f => Converter.Run(f, ext))).ToList(), kind, mode);
             case Mode.Tools:
-                return Tools(kind, files.Count > 1).Append(new Op("Zip", fs => new() { Archive.Zip(fs) })).ToList();
+                return Layout.Apply(Tools(kind, files.Count > 1).Append(new Op("Zip", fs => new() { Archive.Zip(fs) })).ToList(), kind, mode);
             default:
-                return Actions;
+                return Layout.Apply(Actions, kind, mode);
         }
     }
 
@@ -71,21 +74,31 @@ static class Catalog
         bool ff = Shell.FFmpeg != null, office = Shell.Soffice != null;
         var list = kind switch
         {
-            Kind.Image => new List<string> { "jpg", "png", "tiff", "bmp", "gif", "pdf", "docx" }.Concat(ff ? new[] { "webp", "avif" } : new string[0])
+            Kind.Image => new List<string> { "jpg", "png", "tiff", "bmp", "gif", "pdf", "docx", "ico", "icns" }.Concat(ff ? new[] { "webp", "avif" } : new string[0])
                 .Concat(Img.CanHeic.Value ? new[] { "heic" } : new string[0]),
             Kind.Audio => ff ? new[] { "mp3", "m4a", "wav", "flac", "ogg", "opus", "aiff", "wma" } : new[] { "mp3", "m4a", "wav", "flac", "wma" },
             Kind.Video => ff ? new[] { "mp4", "mov", "mkv", "webm", "avi", "wmv", "gif", "mp3", "m4a" } : new[] { "mp4", "wmv", "mp3", "m4a" },
             Kind.Pdf => new List<string> { "png", "jpg", "txt", "md", "docx", "rtf", "html", "xlsx" }
                 .Concat(Shell.Pandoc != null ? new[] { "epub" } : new string[0]).Concat(office ? new[] { "pptx" } : new string[0]),
             Kind.Document => new List<string> { "pdf", "docx", "rtf", "html", "txt", "md", "odt" }.Concat(Shell.Pandoc != null ? new[] { "epub" } : new string[0]),
-            Kind.Sheet => new[] { "csv", "tsv", "xlsx", "ods", "pdf" },
+            Kind.Sheet => new[] { "csv", "tsv", "xlsx", "ods", "pdf", "json" },
             Kind.Slides => office ? new[] { "pdf", "png", "jpg" } : new string[0],
-            Kind.Subtitle => new[] { "srt", "vtt", "txt" },
+            Kind.Subtitle => new[] { "srt", "vtt", "ass", "lrc", "sbv", "txt" },
+            Kind.Data => new[] { "json", "xml", "yaml", "csv", "xlsx" },
+            Kind.Font => new[] { "woff", "ttf", "otf" },
             Kind.Archive => new[] { "zip", "tar", "tar.gz" },
             _ => new string[0],
         };
         return list.ToList();
     }
+
+    /// <summary>Every slice a wheel can show for this kind, before the user's layout hides or reorders any.</summary>
+    public static List<string> AllTitles(Kind kind, Mode mode) => mode switch
+    {
+        Mode.Convert => Targets(kind).Select(t => t.ToUpperInvariant()).ToList(),
+        Mode.Tools => Tools(kind, true).Select(o => o.Title).Append("Zip").ToList(),
+        _ => Actions.Select(o => o.Title).ToList(),
+    };
 
     static List<Op> Tools(Kind kind, bool multi)
     {
@@ -132,7 +145,10 @@ static class Catalog
                 if (multi) ops.Add(new Op("Join", fs => new() { AV.Join(fs) }));
                 break;
             case Kind.Pdf:
-                ops.AddRange(new[] { new Op("Organize", fs => { Organizer.Open(fs[0]); return new(); }, true), Each("Compress", Pdfs.Compress), Each("Split Pages", Pdfs.Split), Each("Rotate", Pdfs.Rotate), Each("Strip Metadata", Pdfs.Strip) });
+                ops.AddRange(new[] { new Op("Organize", fs => { Organizer.Open(fs[0]); return new(); }, true), Each("Compress", Pdfs.Compress), Each("Split Pages", Pdfs.Split), Each("Rotate", Pdfs.Rotate), Each("Strip Metadata", Pdfs.Strip),
+                    new Op("Watermark", fs => Prompt.OnUi(() => Prompt.Text("Watermark", "Text to put across every page:", "CONFIDENTIAL")) is string t ? fs.Select(f => Stamp.Watermark(f, t)).ToList() : new()),
+                    Each("Page Numbers", Stamp.Number),
+                    new Op("Password", fs => Prompt.OnUi(() => Prompt.Text("Password", "Password for the locked copy (the original stays as it is):", secret: true)) is string pw ? fs.Select(f => Stamp.Protect(f, pw)).ToList() : new()) });
                 if (multi) ops.Add(new Op("Merge", fs => new() { Pdfs.Merge(fs) }));
                 break;
             case Kind.Archive:

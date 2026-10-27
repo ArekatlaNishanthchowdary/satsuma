@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using System.Windows;
 using System.Windows.Media;
@@ -24,14 +25,37 @@ record Theme(string Name, Color Accent, Color? Tint = null, bool Clear = false, 
         new("Paper", Rgb(234, 88, 12), Solid: Rgb(250, 248, 244, 0.97), Text: Rgb(28, 25, 23)),
         new("Neon", Rgb(255, 0, 170), Solid: Rgb(8, 6, 20, 0.95), Text: Rgb(0, 240, 255)),
         new("Sunset", Rgb(251, 113, 133), Solid: Rgb(67, 20, 7, 0.94), Text: Rgb(254, 215, 170)),
+        // Community palettes (MIT), the same four Filee ships as theme examples.
+        new("Catppuccin", Rgb(203, 166, 247), Solid: Rgb(30, 30, 46, 0.96), Text: Rgb(205, 214, 244)),
+        new("Dracula", Rgb(189, 147, 249), Solid: Rgb(40, 42, 54, 0.96), Text: Rgb(248, 248, 242)),
+        new("Nord", Rgb(136, 192, 208), Solid: Rgb(46, 52, 64, 0.96), Text: Rgb(236, 239, 244)),
+        new("Monokai", Rgb(166, 226, 46), Solid: Rgb(39, 40, 34, 0.96), Text: Rgb(248, 248, 242)),
     };
 
     const string Key = @"Software\Satsuma";
 
+    /// <summary>The chosen theme, with the user's own accent colour if they picked one.</summary>
     public static Theme Current
     {
-        get => All.FirstOrDefault(t => t.Name == Registry.CurrentUser.OpenSubKey(Key)?.GetValue("Theme") as string) ?? All[0];
+        get
+        {
+            var t = All.FirstOrDefault(t => t.Name == Registry.CurrentUser.OpenSubKey(Key)?.GetValue("Theme") as string) ?? All[0];
+            return CustomAccent is Color c ? t with { Accent = c, Tint = t.Tint == null ? null : WithAlpha(c, 0.20) } : t;
+        }
         set => Registry.CurrentUser.CreateSubKey(Key).SetValue("Theme", value.Name);
+    }
+
+    public static Color? CustomAccent
+    {
+        get => Registry.CurrentUser.OpenSubKey(Key)?.GetValue("Accent") is int v ? Color.FromRgb((byte)(v >> 16), (byte)(v >> 8), (byte)v) : null;
+        set { var k = Registry.CurrentUser.CreateSubKey(Key); if (value is Color c) k.SetValue("Accent", c.R << 16 | c.G << 8 | c.B); else k.DeleteValue("Accent", false); }
+    }
+
+    /// <summary>How see-through the whole wheel is, 0.5 to 1.</summary>
+    public static double Opacity
+    {
+        get => Registry.CurrentUser.OpenSubKey(Key)?.GetValue("Opacity") is int v ? Math.Clamp(v / 100.0, 0.5, 1) : 1;
+        set => Registry.CurrentUser.CreateSubKey(Key).SetValue("Opacity", (int)Math.Round(value * 100));
     }
 
     public static bool DarkMode =>

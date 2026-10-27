@@ -1,4 +1,5 @@
 import AppKit
+import CoreText
 import PDFKit
 
 /// `Satsuma --selftest`: round-trips one file of each native format through the real ops.
@@ -68,6 +69,75 @@ enum SelfTest {
         for i in 0..<(800 * 600 * 4) { px[i] = i % 4 == 3 ? 255 : UInt8.random(in: 0...255, using: &rng) }
         let jpg = try ImageEdit.encodeUnder(ctx.makeImage()!, target: 60_000)
         check(jpg.count <= 60_000 && jpg.count > 20_000, "compress to 60 KB (\(jpg.count / 1000) KB)")
+    }
+
+    /// The formats and tools that came over from Filee, plus wheel layouts and watch folders.
+    static func extraChecks(_ dir: URL, png: URL, pdf: URL, _ check: (Bool, String) -> Void) throws {
+        func f(_ name: String) -> URL { dir.appendingPathComponent(name) }
+        func read(_ u: URL) throws -> String { try String(contentsOf: u) }
+
+        let srt = "1\n00:00:01,000 --> 00:00:02,500\nHello, there\nsecond line\n\n2\n00:01:03,050 --> 00:01:04,000\nWorld\n"
+        try srt.write(to: f("x.srt"), atomically: true, encoding: .utf8)
+        for via in ["ass", "sbv", "vtt"] {
+            check(try read(Convert.run(Convert.run(f("x.srt"), to: via), to: "srt")) == srt, "srt → \(via) → srt")
+        }
+        let lrc = try read(Convert.run(f("x.srt"), to: "lrc"))
+        check(lrc.contains("[00:01.00]Hello, there second line") && lrc.contains("[01:03.05]World"), "srt → lrc")
+        try "[ar:Someone]\n[00:12.00][00:30.50]Chorus\n[00:20.00]Verse\n".write(to: f("y.lrc"), atomically: true, encoding: .utf8)
+        let fromLrc = try read(Convert.run(f("y.lrc"), to: "srt"))
+        check(fromLrc.contains("00:00:12,000 --> 00:00:20,000\nChorus") && fromLrc.contains("00:00:30,500 --> 00:00:34,500\nChorus"), "lrc (repeated tags) → srt")
+
+        try #"[{"name": "Ann", "age": 31, "zip": "01234", "tags": ["a", "b"]}, {"name": "Bo", "ok": true}]"#.write(to: f("p.json"), atomically: true, encoding: .utf8)
+        let rows = try Sheets.read(Convert.run(f("p.json"), to: "csv"))
+        check(rows[0] == ["name", "age", "zip", "tags", "ok"] && rows[1][3] == #"["a","b"]"# && rows[2][4] == "true", "json → csv")
+        let back = try JSON.parse(Data(contentsOf: Convert.run(Convert.run(f("p.json"), to: "csv"), to: "json")))
+        check(back[0]?["age"] == .num("31") && back[0]?["zip"] == .str("01234") && back[1]?["ok"] == .bool(true), "csv → json keeps 31, \"01234\" and true")
+        let xml = try Convert.run(f("p.json"), to: "xml")
+        check(try XMLDocument(contentsOf: xml).rootElement()?.elements(forName: "item").count == 2, "json → xml")
+        let again = try JSON.parse(Data(contentsOf: Convert.run(xml, to: "json")))
+        check(again["root"]?["item"]?[0]?["tags"]?[1] == .str("b"), "xml → json")
+        let yaml = try read(Convert.run(f("p.json"), to: "yaml"))
+        check(yaml.hasPrefix("-\n  name: Ann\n  age: 31\n  zip: \"01234\"\n  tags:\n    - a\n") && yaml.contains("ok: true"), "json → yaml")
+        check(try JSON.parse(Data(#"{"e": "é😀\n"}"#.utf8))["e"] == .str("é😀\n"), "json escapes and surrogate pairs")
+
+        try FileManager.default.copyItem(at: URL(fileURLWithPath: "/System/Library/Fonts/Supplemental/Arial.ttf"), to: f("f.ttf"))
+        check(Fonts.targets(f("f.ttf")) == ["woff"], "ttf offers woff")
+        let woff = try Convert.run(f("f.ttf"), to: "woff")
+        func size(_ u: URL) -> Int { (try? u.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0 }
+        check(Double(size(woff)) < Double(size(f("f.ttf"))) * 0.8 && Fonts.targets(woff) == ["ttf"], "ttf → woff is smaller, knows it holds a ttf")
+        let ttf = try Convert.run(woff, to: "ttf")
+        let family = (CTFontManagerCreateFontDescriptorsFromURL(ttf as CFURL) as? [CTFontDescriptor])?.first
+            .flatMap { CTFontDescriptorCopyAttribute($0, kCTFontFamilyNameAttribute) as? String }
+        let rewoffed = try Fonts.toWoff([UInt8](Data(contentsOf: ttf))), original = [UInt8](try Data(contentsOf: woff))
+        check(family == "Arial" && rewoffed == original, "woff → ttf loads as Arial, same tables")
+
+        let ico = try Convert.run(png, to: "ico")
+        let src = CGImageSourceCreateWithURL(ico as CFURL, nil)!
+        check(CGImageSourceGetCount(src) == 7 && (0..<7).map { CGImageSourceCreateImageAtIndex(src, $0, nil)?.width ?? 0 }.max() == 256, "png → ico (16…256 px)")
+        let icns = [UInt8](try Data(contentsOf: Convert.run(png, to: "icns")))
+        check(String(decoding: icns[0..<4], as: UTF8.self) == "icns" && Int(Fonts.u32(icns, 4)) == icns.count && NSImage(data: Data(icns)) != nil, "png → icns")
+
+        check(PDFDocument(url: try Stamp.watermark(pdf, "DRAFT"))?.string?.contains("DRAFT") == true, "pdf watermark")
+        let numbered = try Catalog.ops(.tools, [pdf]).first { $0.title == "Page Numbers" }!.run([pdf])[0]
+        check(PDFDocument(url: numbered)?.string?.contains("1 / 1") == true, "pdf page numbers")
+        let locked = PDFDocument(url: try Stamp.protect(pdf, "s3cret"))!
+        check(locked.isLocked && locked.unlock(withPassword: "s3cret") && locked.pageCount == 1, "pdf password")
+
+        // Layouts and watch folders live in the user's defaults; leave them as they were.
+        let savedLayout = Layout.get(.pdf, .tools)
+        defer { if let savedLayout { Layout.set(.pdf, .tools, savedLayout) } else { Layout.reset(.pdf, .tools) } }
+        Layout.set(.pdf, .tools, [("Merge", false), ("Compress", true)])
+        let titles = Catalog.ops(.tools, [pdf, pdf]).map(\.title)
+        check(titles.first == "Merge" && !titles.contains("Compress") && titles.contains("Watermark"), "wheel layout: reorder and hide")
+
+        let inbox = f("inbox")
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+        defer { Watch.remove(inbox.path) }
+        Watch.add(inbox.path, "jpg")
+        try FileManager.default.copyItem(at: png, to: inbox.appendingPathComponent("dropped.png"))
+        let jpg = inbox.appendingPathComponent("dropped.jpg")
+        for _ in 0..<60 where !FileManager.default.fileExists(atPath: jpg.path) { Watch.tick(); Thread.sleep(forTimeInterval: 0.25) }
+        check(FileManager.default.fileExists(atPath: jpg.path), "watch folder converts a new file")
     }
 
     static func run() {
@@ -156,6 +226,7 @@ enum SelfTest {
                 check(PDFDocument(url: try Convert.run(odp, to: "pdf"))?.string?.contains("Hello") == true, "slides → pdf (LibreOffice)")
                 check((try Convert.run(pdf, to: "pptx").resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) > 1000, "pdf → pptx (LibreOffice)")
             } else { print("skip slides, xls, pdf → pptx (no LibreOffice)") }
+            try extraChecks(dir, png: png, pdf: pdf, check)
             check(Thumbs.describe([csv]).hasSuffix("bytes") && Thumbs.describe([csv, png]).hasPrefix("2 items"), "size line")
 
             let missing = WheelView.symbols.filter { NSImage(systemSymbolName: $0.value, accessibilityDescription: nil) == nil }

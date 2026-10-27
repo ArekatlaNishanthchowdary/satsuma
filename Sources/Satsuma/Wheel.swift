@@ -19,8 +19,10 @@ final class WheelPanel: NSPanel {
 
     private func applyTheme() {
         let theme = Theme.current
-        guard theme.name != themeName else { return }
-        themeName = theme.name
+        alphaValue = Theme.opacity
+        let key = theme.name + theme.accent.description
+        guard key != themeName else { return }
+        themeName = key
         wheel.theme = theme
         wheel.removeFromSuperview()
         wheel.frame = NSRect(x: 0, y: 0, width: Self.size, height: Self.size)
@@ -48,6 +50,37 @@ final class WheelPanel: NSPanel {
         if !isVisible { setFrameOrigin(NSPoint(x: point.x - Self.size / 2, y: point.y - Self.size / 2)) }
         wheel.needsDisplay = true
         orderFrontRegardless()
+        watchScroll()
+    }
+
+    /// Turns to the next wheel (Convert, Tools, Actions), or back with dir = -1. Like Filee's donut flip.
+    func flip(_ dir: Int) {
+        guard isVisible else { return }
+        show(Mode.allCases[(mode.rawValue + dir + 3) % 3], files: wheel.files, at: .zero)
+        Click.play()
+    }
+
+    // The scroll wheel flips too. Mid-drag Finder owns the mouse, so a global monitor hears it; mouse monitors need no permission.
+    private var monitors: [Any] = []
+    private var scrolled: CGFloat = 0
+
+    private func watchScroll() {
+        guard monitors.isEmpty else { return }
+        scrolled = 0
+        let handle: (NSEvent) -> Void = { [weak self] e in
+            guard let self else { return }
+            self.scrolled += e.scrollingDeltaY
+            let step: CGFloat = e.hasPreciseScrollingDeltas ? 40 : 1
+            if abs(self.scrolled) >= step { let dir = self.scrolled < 0 ? 1 : -1; self.scrolled = 0; self.flip(dir) }
+        }
+        if let g = NSEvent.addGlobalMonitorForEvents(matching: .scrollWheel, handler: handle) { monitors.append(g) }
+        if let l = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel, handler: { handle($0); return nil }) { monitors.append(l) }
+    }
+
+    override func orderOut(_ sender: Any?) {
+        monitors.forEach(NSEvent.removeMonitor)
+        monitors = []
+        super.orderOut(sender)
     }
 }
 
@@ -137,8 +170,12 @@ final class WheelView: NSView {
                 // Tools and actions: icon over a small caps label. Format slices stay text-only.
                 let s = icon.size
                 icon.draw(in: NSRect(x: at.x - s.width / 2, y: at.y + 10 - s.height / 2, width: s.width, height: s.height))
-                label(op.title.uppercased(), at: CGPoint(x: at.x, y: at.y - 11),
-                      font: .systemFont(ofSize: op.title.count > 11 ? 9 : 10, weight: .bold), color: color)
+                // Crowded wheels put long two-word labels on two lines so neighbours don't touch.
+                var caps = op.title.uppercased()
+                let wrapped = ops.count > 8 && caps.count > 10 && caps.contains(" ")
+                if wrapped { caps = caps.replacingOccurrences(of: " ", with: "\n") }
+                label(caps, at: CGPoint(x: at.x, y: at.y - (wrapped ? 16 : 11)),
+                      font: .systemFont(ofSize: caps.count > 11 && !wrapped ? 9 : 10, weight: .bold), color: color)
             } else {
                 label(op.title, at: at, font: .systemFont(ofSize: ops.count > 10 ? 12 : 14.5, weight: .bold), color: color)
             }
@@ -164,6 +201,9 @@ final class WheelView: NSView {
         label(sizeText, at: CGPoint(x: center.x, y: center.y - 9), font: .systemFont(ofSize: 10.5, weight: .semibold),
               color: text.withAlphaComponent(0.75))
         let keys: [(String, Mode)] = [("⇧", .convert), ("⌘", .tools), ("⌃", .actions)]
+        if !files.isEmpty && hover == nil {
+            label("⇥ ⇄", at: CGPoint(x: center.x, y: center.y - 42), font: .systemFont(ofSize: 9, weight: .semibold), color: text.withAlphaComponent(0.45))
+        }
         for (k, (sym, m)) in keys.enumerated() {
             label(sym, at: CGPoint(x: center.x + CGFloat(k - 1) * 20, y: center.y - 27), font: .systemFont(ofSize: 11, weight: .medium),
                   color: m == mode ? accent : text.withAlphaComponent(0.45))
@@ -181,14 +221,17 @@ final class WheelView: NSView {
         "Make PDF": "doc.richtext", "Zip": "doc.zipper", "Snapshot": "camera", "Extract Audio": "waveform",
         "Mute": "speaker.slash", "Speed 2×": "hare", "Join": "link", "Normalize": "speaker.wave.2",
         "Trim Silence": "scissors", "Mono": "hifispeaker", "Split Pages": "rectangle.split.2x1",
-        "Merge": "rectangle.stack", "Extract": "archivebox",
+        "Merge": "rectangle.stack", "Extract": "archivebox", "Organize": "square.grid.2x2",
+        "Watermark": "textformat", "Page Numbers": "number", "Password": "lock",
         "AirDrop": "dot.radiowaves.left.and.right", "Copy": "doc.on.doc", "Copy Path": "doc.text",
         "Terminal": "terminal", "Quick Look": "eye", "Float": "pip", "Move To…": "folder",
     ]
 
     private func label(_ text: String, at p: CGPoint, font: NSFont, color: NSColor) {
-        let s = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: color])
+        let centred = NSMutableParagraphStyle()
+        centred.alignment = .center
+        let s = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: color, .paragraphStyle: centred])
         let size = s.size()
-        s.draw(at: CGPoint(x: p.x - size.width / 2, y: p.y - size.height / 2))
+        s.draw(in: NSRect(x: p.x - size.width / 2, y: p.y - size.height / 2, width: size.width + 1, height: size.height))
     }
 }

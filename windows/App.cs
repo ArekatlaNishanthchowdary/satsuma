@@ -64,7 +64,7 @@ class Controller
     readonly WheelWindow wheel = new();
     readonly Hud hud = new();
     readonly WF.NotifyIcon tray;
-    bool wasDown, moved, lastShift, lastCtrl, lastAlt;
+    bool wasDown, moved, lastShift, lastCtrl, lastAlt, lastTab;
     POINT start;
 
     public Controller(bool tray)
@@ -88,6 +88,10 @@ class Controller
                 typeof(WF.NotifyIcon).GetMethod("ShowContextMenu", BindingFlags.Instance | BindingFlags.NonPublic)?.Invoke(this.tray, null);
         };
         Application.Current.Exit += (_, _) => this.tray.Visible = false;
+
+        Watch.Failed = (file, e) => Application.Current.Dispatcher.BeginInvoke(() =>
+            this.tray.ShowBalloonTip(6000, $"Couldn't convert {Path.GetFileName(file)}", Inner(e).Message, WF.ToolTipIcon.Warning));
+        Watch.Restart();
 
         var settings = Registry.CurrentUser.CreateSubKey(@"Software\Satsuma");
         if (settings.GetValue("Welcomed") == null)
@@ -117,7 +121,10 @@ class Controller
         bool shift = Down(0x10), ctrl = Down(0x11), alt = Down(0x12);
         bool pShift = shift && !lastShift, pCtrl = ctrl && !lastCtrl, pAlt = alt && !lastAlt;
         (lastShift, lastCtrl, lastAlt) = (shift, ctrl, alt);
+        bool tab = Down(0x09), pTab = tab && !lastTab;
+        lastTab = tab;
         if (!down || !moved) return;
+        if (pTab && wheel.IsVisible) { wheel.Flip(shift ? -1 : 1); return; }
 
         // Only a key tapped mid-drag opens the wheel, so Ctrl-dragging to copy still works normally.
         Mode? mode = pShift ? Mode.Convert : pCtrl ? Mode.Tools : pAlt ? Mode.Actions : null;
@@ -165,11 +172,13 @@ class Controller
         if (outs.Count > 0) Process.Start("explorer.exe", $"/select,\"{outs[0]}\"");
     }
 
-    static void Error(string title, Exception e)
+    static Exception Inner(Exception e)
     {
         while (e is AggregateException or TargetInvocationException && e.InnerException != null) e = e.InnerException;
-        MessageBox.Show(e.Message, $"{title} failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+        return e;
     }
+
+    static void Error(string title, Exception e) => MessageBox.Show(Inner(e).Message, $"{title} failed", MessageBoxButton.OK, MessageBoxImage.Warning);
 
     void BuildMenu(WF.ContextMenuStrip menu)
     {
@@ -185,10 +194,26 @@ class Controller
             { Checked = t.Name == Theme.Current.Name };
             themes.DropDownItems.Add(item);
         }
+        themes.DropDownItems.Add(new WF.ToolStripSeparator());
+        themes.DropDownItems.Add("Accent Colour…", null, (_, _) => PickAccent());
+        if (Theme.CustomAccent != null) themes.DropDownItems.Add("Theme's Own Accent", null, (_, _) => { Theme.CustomAccent = null; Preview(); });
+        var opacity = new WF.ToolStripMenuItem("Wheel Opacity");
+        foreach (var pct in new[] { 100, 90, 80, 70, 60 })
+            opacity.DropDownItems.Add(new WF.ToolStripMenuItem($"{pct}%", null, (_, _) => { Theme.Opacity = pct / 100.0; Preview(); })
+                { Checked = (int)Math.Round(Theme.Opacity * 100) == pct });
+        themes.DropDownItems.Add(opacity);
         menu.Items.Add(themes);
+        menu.Items.Add("Customize Wheel…", null, (_, _) => Customizer.Show());
         menu.Items.Add("Preview Wheel", null, (_, _) => Preview());
         menu.Items.Add(new WF.ToolStripMenuItem("Click Sound on Hover", null, (_, _) => { Click.Enabled = !Click.Enabled; Click.Play(); })
             { Checked = Click.Enabled });
+        var watch = new WF.ToolStripMenuItem("Watch Folders");
+        foreach (var (dir, ext) in Watch.All)
+            watch.DropDownItems.Add(new WF.ToolStripMenuItem($"{dir} → {ext.ToUpperInvariant()}", null, (_, _) => Watch.Remove(dir))
+                { Checked = true, ToolTipText = "Click to stop watching" });
+        if (watch.DropDownItems.Count > 0) watch.DropDownItems.Add(new WF.ToolStripSeparator());
+        watch.DropDownItems.Add("Add Folder…", null, (_, _) => AddWatch());
+        menu.Items.Add(watch);
         menu.Items.Add(new WF.ToolStripSeparator());
 
         foreach (var (name, path, id) in new[] { ("ffmpeg", Shell.FFmpeg, "Gyan.FFmpeg"), ("pandoc", Shell.Pandoc, "JohnMacFarlane.Pandoc"), ("LibreOffice", Shell.Soffice, "TheDocumentFoundation.LibreOffice") })
@@ -218,6 +243,23 @@ class Controller
         using var brush = new SD.SolidBrush(SD.Color.FromArgb(c.R, c.G, c.B));
         g.FillEllipse(brush, 1, 1, 12, 12);
         return bmp;
+    }
+
+    void PickAccent()
+    {
+        var now = Theme.Current.Accent;
+        using var dlg = new WF.ColorDialog { FullOpen = true, Color = SD.Color.FromArgb(now.R, now.G, now.B) };
+        if (dlg.ShowDialog() != WF.DialogResult.OK) return;
+        Theme.CustomAccent = System.Windows.Media.Color.FromRgb(dlg.Color.R, dlg.Color.G, dlg.Color.B);
+        Preview();
+    }
+
+    static void AddWatch()
+    {
+        using var dlg = new WF.FolderBrowserDialog { Description = "Convert every new file in this folder" };
+        if (dlg.ShowDialog() != WF.DialogResult.OK) return;
+        if (Prompt.Choose("Watch folder", $"Convert new files in {Path.GetFileName(dlg.SelectedPath)} to…", Watch.Formats.Select(f => f.ToUpperInvariant())) is string ext)
+            Watch.Add(dlg.SelectedPath, ext.ToLowerInvariant());
     }
 
     static void ToggleSendTo(string lnk)

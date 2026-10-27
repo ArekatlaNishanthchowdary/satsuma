@@ -2,7 +2,7 @@ import AppKit
 
 struct Theme {
     let name: String
-    let accent: NSColor
+    var accent: NSColor
     /// Glass tint; ignored by solid themes.
     var tint: NSColor? = nil
     /// Clear glass is more see-through than regular.
@@ -29,11 +29,35 @@ struct Theme {
         Theme(name: "Paper", accent: rgb(234, 88, 12), solid: rgb(250, 248, 244, 0.96), text: rgb(28, 25, 23)),
         Theme(name: "Neon", accent: rgb(255, 0, 170), solid: rgb(8, 6, 20, 0.94), text: rgb(0, 240, 255)),
         Theme(name: "Sunset", accent: rgb(251, 113, 133), solid: rgb(67, 20, 7, 0.92), text: rgb(254, 215, 170)),
+        // Community palettes (MIT), the same four Filee ships as theme examples.
+        Theme(name: "Catppuccin", accent: rgb(203, 166, 247), solid: rgb(30, 30, 46, 0.95), text: rgb(205, 214, 244)),
+        Theme(name: "Dracula", accent: rgb(189, 147, 249), solid: rgb(40, 42, 54, 0.95), text: rgb(248, 248, 242)),
+        Theme(name: "Nord", accent: rgb(136, 192, 208), solid: rgb(46, 52, 64, 0.95), text: rgb(236, 239, 244)),
+        Theme(name: "Monokai", accent: rgb(166, 226, 46), solid: rgb(39, 40, 34, 0.95), text: rgb(248, 248, 242)),
     ]
 
+    /// The chosen theme, with the user's own accent colour if they picked one.
     static var current: Theme {
-        get { all.first { $0.name == UserDefaults.standard.string(forKey: "theme") } ?? all[0] }
+        get {
+            var t = all.first { $0.name == UserDefaults.standard.string(forKey: "theme") } ?? all[0]
+            if let c = customAccent { t.accent = c; if t.tint != nil { t.tint = c.withAlphaComponent(0.18) } }
+            return t
+        }
         set { UserDefaults.standard.set(newValue.name, forKey: "theme") }
+    }
+
+    static var customAccent: NSColor? {
+        get { (UserDefaults.standard.array(forKey: "accent") as? [Double]).map { rgb($0[0], $0[1], $0[2]) } }
+        set {
+            guard let c = newValue?.usingColorSpace(.sRGB) else { UserDefaults.standard.removeObject(forKey: "accent"); return }
+            UserDefaults.standard.set([c.redComponent * 255, c.greenComponent * 255, c.blueComponent * 255].map(Double.init), forKey: "accent")
+        }
+    }
+
+    /// How see-through the whole wheel is, 0.5 to 1.
+    static var opacity: CGFloat {
+        get { UserDefaults.standard.object(forKey: "opacity") == nil ? 1 : min(max(UserDefaults.standard.double(forKey: "opacity"), 0.5), 1) }
+        set { UserDefaults.standard.set(Double(newValue), forKey: "opacity") }
     }
 
     var isGlass: Bool { solid == nil }

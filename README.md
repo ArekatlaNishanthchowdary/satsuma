@@ -50,23 +50,38 @@
    | **Actions** | <kbd>⌃ Control</kbd> | <kbd>Alt</kbd> | Copy, Copy Path, Terminal, Move To…, Float, plus AirDrop & Quick Look (Mac) or Share & Open (Windows) |
 
 3. **Drop on a slice.** The result is saved **next to the original** and highlighted in Finder or Explorer.
-   Drop in the middle to cancel; tap another key to switch wheels.
+   Drop in the middle to cancel; tap another key to switch wheels, or press <kbd>Tab</kbd> / turn the scroll wheel to
+   flip through them (<kbd>Shift</kbd>+<kbd>Tab</kbd> goes back).
 
 Prefer clicking? Use **Choose Files…** in the menu bar or tray icon. On Windows you can also turn on
 **right-click → Send to → Satsuma**.
+
+### Make it yours
+
+- **Customize Wheel…** (menu bar / tray): for each kind of file and each wheel, tick the slices you want and drag them
+  into order. The wheel beside the list previews the result, and **Reset this wheel** puts it back.
+- **Watch Folders → Add Folder…**: pick a folder and a format, and every new file that lands there (a download, a
+  screenshot, a scan) is converted beside it. Click a watched folder in the menu to stop.
+- **Theme → Accent Colour…** and **Wheel Opacity** recolour any theme and make the wheel more see-through.
+
+<p align="center">
+  <img src="docs/customize.png" alt="The Customize Wheel window: a checklist of PDF tools beside a preview of the wheel" width="80%">
+</p>
 
 ## What it converts
 
 | Kind | Convert to | Tools |
 |---|---|---|
-| 🖼 **Images**: JPG, PNG, HEIC, TIFF, BMP, GIF, WebP, AVIF, SVG¹ | JPG · PNG · HEIC · TIFF · BMP · GIF · PDF · DOCX · WebP² · AVIF² | **Edit** · **Crop** · **Redact** · **Annotate** · **Add BG** · Compress to size · Resize 50% · Rotate · Strip Metadata · Read QR¹ · Make PDF · Collage |
+| 🖼 **Images**: JPG, PNG, HEIC, TIFF, BMP, GIF, WebP, AVIF, ICO, SVG¹, ICNS¹ | JPG · PNG · HEIC · TIFF · BMP · GIF · PDF · DOCX · ICO · ICNS · WebP² · AVIF² | **Edit** · **Crop** · **Redact** · **Annotate** · **Add BG** · Compress to size · Resize 50% · Rotate · Strip Metadata · Read QR¹ · Make PDF · Collage |
 | 🎵 **Audio**: MP3, M4A, WAV, FLAC, OGG, Opus, AIFF, WMA, AAC | MP3 · M4A · WAV · FLAC · OGG · Opus · AIFF · WMA | **Trim** · **Bleep** · **Channels** · **Visualize** · **Split** · Compress to size · Normalize · Trim Silence · Strip Metadata · Join |
 | 🎬 **Video**: MP4, MOV, MKV, WebM, AVI, WMV, M4V | MP4 · MOV · MKV · WebM · AVI · WMV · GIF · MP3 · M4A | **Trim** · **Split** · **Speed** · **Crop** · **Redact** · Compress to size · Snapshot · Mute · Extract Audio · Strip Metadata · Join |
-| 📄 **PDF** | PNG / JPG (every page, 300 DPI) · TXT · Markdown · DOCX · RTF · HTML · XLSX · EPUB³ · PPTX⁴ | **Organize** · Compress · Split Pages · Rotate · Merge · Strip Metadata |
+| 📄 **PDF** | PNG / JPG (every page, 300 DPI) · TXT · Markdown · DOCX · RTF · HTML · XLSX · EPUB³ · PPTX⁴ | **Organize** · Compress · Split Pages · Rotate · Merge · Strip Metadata · Watermark · Page Numbers · Password |
 | 📝 **Documents**: DOCX, ODT, RTF, HTML, TXT, Markdown, EPUB³ (+ DOC, RTFD, webarchive on Mac) | PDF · DOCX · ODT · RTF · HTML · TXT · Markdown · EPUB³ | |
-| 📊 **Spreadsheets**: CSV, TSV, XLSX, ODS, XLS⁴ | CSV · TSV · XLSX · ODS · PDF | |
+| 📊 **Spreadsheets**: CSV, TSV, XLSX, ODS, XLS⁴ | CSV · TSV · XLSX · ODS · PDF · JSON | |
 | 📽 **Slides**⁴: PPT, PPTX, ODP | PDF · PNG · JPG | |
-| 💬 **Subtitles**: SRT, VTT | SRT · VTT · TXT | |
+| 💬 **Subtitles**: SRT, VTT, ASS/SSA, LRC, SBV | SRT · VTT · ASS · LRC · SBV · TXT | |
+| 🧾 **Data**: JSON, XML | JSON · XML · YAML · CSV · XLSX | |
+| 🔤 **Fonts**: TTF, OTF, WOFF | WOFF (from TTF/OTF) · TTF or OTF (from WOFF) | |
 | 🗜 **Archives**: ZIP, TAR, TAR.GZ, GZ, RAR, 7z | ZIP · TAR · TAR.GZ | Extract |
 | 📁 **Anything** | | Zip |
 
@@ -81,7 +96,7 @@ and Save writes a new file beside the original. "Compress to size" asks for a ta
 OS encoders (fewer formats, no editors). See [Optional engines](#optional-engines-ffmpeg-pandoc-libreoffice).</sub>
 
 **How many?** Counted as input format → output format pairs with ffmpeg, pandoc and LibreOffice installed, Satsuma offers
-**343 conversions on Mac and 311 on Windows**, plus **41 tools** (Mac; 40 on Windows) and **7 actions**. Without the
+**427 conversions on Mac and 372 on Windows**, plus **44 tools** (Mac; 43 on Windows) and **7 actions**. Without the
 optional engines the counts are lower.
 
 Satsuma uses what your OS already ships with (ImageIO, AVFoundation, PDFKit and Liquid Glass on macOS; Media Foundation,
@@ -90,10 +105,12 @@ automatically. See [Optional engines](#optional-engines-ffmpeg-pandoc-libreoffic
 
 ## Themes
 
-Twelve looks, from see-through **glass** to bold **solid** colours. Pick one under **Theme** in the menu, and the wheel previews it on the spot.
+Sixteen looks, from see-through **glass** to bold **solid** colours, including the Catppuccin, Dracula, Nord and Monokai
+palettes. Pick one under **Theme** in the menu, and the wheel previews it on the spot. **Accent Colour…** swaps in your own
+highlight colour, and **Wheel Opacity** sets how see-through the wheel is.
 
 <p align="center">
-  <img src="docs/themes.png" alt="All twelve Satsuma themes" width="100%">
+  <img src="docs/themes.png" alt="All sixteen Satsuma themes" width="100%">
 </p>
 
 On **macOS 26** the wheel and progress card use Apple's real **Liquid Glass** (`NSGlassEffectView`); older macOS gets a vibrancy blur.
@@ -221,6 +238,8 @@ The only third-party code ships in the Windows build (the two PDF libraries). Ev
 - PDF → XLSX guesses columns from spacing; real tables in PDFs may need tidying.
 - XLSX reads the first sheet's values (not formulas).
 - PDF Organize reorders with arrow buttons (no drag-and-drop yet).
+- Watermark and Page Numbers redraw the pages, so links, form fields and bookmarks don't carry over on Mac.
+- WOFF2 fonts and font collections (.ttc) aren't supported; YAML is output only.
 - The trigger keys are fixed. On Windows, tapping Shift while dragging a window shows an empty wheel until you let go.
 - The installers aren't code-signed, so your OS asks once.
 
@@ -230,6 +249,11 @@ Ideas and pull requests are welcome.
 
 Inspired by [Tangerine](https://tangerineformac.com/), a lovely paid app for Apple Silicon Macs. Satsuma is an independent
 open-source project and isn't affiliated with it. If you're on Apple Silicon and want the polished original, go buy it.
+
+Wheel flipping, wheel customizing, watch folders, the subtitle, data, font and icon formats, the PDF stamps and the four
+community themes were inspired by [Filee](https://github.com/KnifeLemon/Filee) (MIT), a cross-platform drag-and-drop
+converter. Satsuma's code is its own. Theme colours come from the [Catppuccin](https://github.com/catppuccin/palette),
+[Dracula](https://draculatheme.com), [Nord](https://www.nordtheme.com) and Monokai palettes (MIT).
 
 ## License
 

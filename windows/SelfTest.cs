@@ -77,6 +77,8 @@ static class SelfTest
             var tgz = Converter.Run(Tool("Zip", F("t.csv"))[0], "tar.gz");
             Check(File.Exists(Path.Combine(Tool("Extract", tgz)[0], "t.csv")), "zip → tar.gz → extract");
 
+            ExtraChecks(dir, F("i.png"), pdf);
+
             WriteWav(F("a.wav"));
             foreach (var ext in new[] { "mp3", "m4a" })
                 Check(new FileInfo(AV.Transcode(F("a.wav"), Paths.Output(F("a.wav"), ext), AV.Profile(ext))).Length > 1000, $"wav → {ext} (Windows encoder)");
@@ -175,6 +177,79 @@ static class SelfTest
     }
 
     /// <summary><c>--shots dir</c>: transparent PNGs of each wheel (Tangerine) and of every theme, for the README.</summary>
+    /// <summary>The formats and tools that came over from Filee, plus wheel layouts and watch folders.</summary>
+    static void ExtraChecks(string dir, string png, string pdf)
+    {
+        void Check(bool ok, string what) { Console.WriteLine(ok ? $"ok   {what}" : $"FAIL {what}"); if (!ok) throw new Fail(what); }
+        string F(string name) => Path.Combine(dir, name);
+        List<string> Tool(string title, string file) => Catalog.Ops(Mode.Tools, new() { file }).First(o => o.Title == title).Run(new() { file });
+
+        File.WriteAllText(F("x.srt"), "1\n00:00:01,000 --> 00:00:02,500\nHello, there\nsecond line\n\n2\n00:01:03,050 --> 00:01:04,000\nWorld\n");
+        var srt = File.ReadAllText(F("x.srt"));
+        foreach (var via in new[] { "ass", "sbv", "vtt" })
+            Check(File.ReadAllText(Converter.Run(Converter.Run(F("x.srt"), via), "srt")) == srt, $"srt → {via} → srt");
+        var lrc = File.ReadAllText(Converter.Run(F("x.srt"), "lrc"));
+        Check(lrc.Contains("[00:01.00]Hello, there second line") && lrc.Contains("[01:03.05]World"), "srt → lrc");
+        File.WriteAllText(F("y.lrc"), "[ar:Someone]\n[00:12.00][00:30.50]Chorus\n[00:20.00]Verse\n");
+        var fromLrc = File.ReadAllText(Converter.Run(F("y.lrc"), "srt"));
+        Check(fromLrc.Contains("00:00:12,000 --> 00:00:20,000\nChorus") && fromLrc.Contains("00:00:30,500 --> 00:00:34,500\nChorus"), "lrc (repeated tags) → srt");
+
+        File.WriteAllText(F("p.json"), "[{\"name\": \"Ann\", \"age\": 31, \"zip\": \"01234\", \"tags\": [\"a\", \"b\"]}, {\"name\": \"Bo\", \"ok\": true}]");
+        var rows = Sheets.Read(Converter.Run(F("p.json"), "csv"));
+        Check(rows[0].SequenceEqual(new[] { "name", "age", "zip", "tags", "ok" }) && rows[1][3] == "[\"a\",\"b\"]" && rows[2][4] == "true", "json → csv");
+        var back = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Converter.Run(Converter.Run(F("p.json"), "csv"), "json")));
+        Check(back[0]["age"].GetValue<double>() == 31 && back[0]["zip"].GetValue<string>() == "01234" && back[1]["ok"].GetValue<bool>(), "csv → json keeps 31, \"01234\" and true");
+        var xml = Converter.Run(F("p.json"), "xml");
+        Check(System.Xml.Linq.XDocument.Load(xml).Root.Elements("item").Count() == 2, "json → xml");
+        var again = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Converter.Run(xml, "json")));
+        Check(again["root"]["item"][0]["tags"][1].GetValue<string>() == "b", "xml → json");
+        var yaml = File.ReadAllText(Converter.Run(F("p.json"), "yaml"));
+        Check(yaml.StartsWith("-\n  name: Ann\n  age: 31\n  zip: \"01234\"\n  tags:\n    - a\n") && yaml.Contains("ok: true"), "json → yaml");
+
+        File.Copy(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "arial.ttf"), F("f.ttf"));
+        Check(Fonts.Targets(F("f.ttf")).SequenceEqual(new[] { "woff" }), "ttf offers woff");
+        var woff = Converter.Run(F("f.ttf"), "woff");
+        Check(new FileInfo(woff).Length < new FileInfo(F("f.ttf")).Length * 0.8 && Fonts.Targets(woff).SequenceEqual(new[] { "ttf" }), "ttf → woff is smaller, knows it holds a ttf");
+        var ttf = Converter.Run(woff, "ttf");
+        Check(new GlyphTypeface(new Uri(ttf)).FamilyNames.Values.Contains("Arial") && Fonts.ToWoff(File.ReadAllBytes(ttf)).SequenceEqual(File.ReadAllBytes(woff)), "woff → ttf loads as Arial, same tables");
+
+        var ico = Converter.Run(png, "ico");
+        Check(new IconBitmapDecoder(new Uri(ico), BitmapCreateOptions.None, BitmapCacheOption.OnLoad).Frames.Max(f => f.PixelWidth) == 256, "png → ico (16…256 px)");
+        var icns = File.ReadAllBytes(Converter.Run(png, "icns"));
+        Check(System.Text.Encoding.ASCII.GetString(icns, 0, 4) == "icns" && System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(icns.AsSpan(4)) == icns.Length, "png → icns");
+
+        Check(string.Join(" ", Pdfs.Text(Stamp.Watermark(pdf, "DRAFT"))).Contains("DRAFT"), "pdf watermark");
+        Check(string.Join(" ", Pdfs.Text(Tool("Page Numbers", pdf)[0])).Contains("1 / 1"), "pdf page numbers");
+        var locked = Stamp.Protect(pdf, "s3cret");
+        bool refused;
+        try { PdfReader.Open(locked, PdfDocumentOpenMode.Import).Dispose(); refused = false; } catch { refused = true; }
+        Check(refused && PdfReader.Open(locked, "s3cret", PdfDocumentOpenMode.Import).PageCount == 1, "pdf password (AES-256)");
+
+        foreach (var (title, glyph) in WheelWindow.IconGlyphs)
+            Check(new[] { "Segoe Fluent Icons", "Segoe MDL2 Assets" }.Any(f => new Typeface(f).TryGetGlyphTypeface(out var g) && g.CharacterToGlyphMap.ContainsKey(glyph)), $"icon for {title}");
+
+        // Layouts and watch folders live in the registry; leave the user's own settings as they were.
+        var savedLayout = Layout.Get(Kind.Pdf, Mode.Tools);
+        try
+        {
+            Layout.Set(Kind.Pdf, Mode.Tools, new[] { ("Merge", false), ("Compress", true) });
+            var titles = Catalog.Ops(Mode.Tools, new() { pdf, pdf }).Select(o => o.Title).ToList();
+            Check(titles[0] == "Merge" && !titles.Contains("Compress") && titles.Contains("Watermark"), "wheel layout: reorder and hide");
+        }
+        finally { if (savedLayout == null) Layout.Reset(Kind.Pdf, Mode.Tools); else Layout.Set(Kind.Pdf, Mode.Tools, savedLayout); }
+
+        var inbox = Directory.CreateDirectory(F("inbox")).FullName;
+        try
+        {
+            Watch.Add(inbox, "jpg");
+            File.Copy(png, Path.Combine(inbox, "dropped.png"));
+            var deadline = DateTime.Now.AddSeconds(15);
+            while (!File.Exists(Path.Combine(inbox, "dropped.jpg")) && DateTime.Now < deadline) System.Threading.Thread.Sleep(200);
+            Check(File.Exists(Path.Combine(inbox, "dropped.jpg")), "watch folder converts a new file");
+        }
+        finally { Watch.Remove(inbox); }
+    }
+
     public static void Shots(string dir)
     {
         Directory.CreateDirectory(dir);
@@ -194,6 +269,8 @@ static class SelfTest
         Img.Save(wheel.Render(Mode.Convert, photo, null, Brushes.Transparent, pic), Path.Combine(dir, "mode-convert.png"));
         Img.Save(wheel.Render(Mode.Tools, photo, 0, Brushes.Transparent), Path.Combine(dir, "mode-tools.png"));
         Img.Save(wheel.Render(Mode.Actions, photo, 3, Brushes.Transparent), Path.Combine(dir, "mode-actions.png"));
+        Img.Save(wheel.Render(Mode.Tools, new() { @"C:\Report.pdf" }, null, Brushes.Transparent), Path.Combine(dir, "mode-pdf-tools.png"));
+        Img.Save(Customizer.Snapshot(), Path.Combine(dir, "customizer.png"));
         // Editor windows, each with a little demo state, on a generated sample photo.
         var sample = Path.Combine(dir, "sample.png");
         Img.Save(ImageEdit.Render(1200, 800, dc =>

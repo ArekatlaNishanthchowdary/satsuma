@@ -96,6 +96,8 @@ enum Convert {
         case .subtitle: return try Subs.convert(src, to: ext)
         case .archive: return try Archive.convert(src, to: ext)
         case .slides: return try Slides.convert(src, to: ext)
+        case .data: return try DataFiles.convert(src, to: ext)
+        case .font: return try Fonts.convert(src, to: ext)
         case .other: throw Fail("Satsuma doesn't know how to convert \(src.lastPathComponent)")
         }
     }
@@ -134,6 +136,8 @@ enum Img {
             guard doc.write(to: url) else { throw Fail("Couldn't write \(url.lastPathComponent)") }
         case "docx":
             try DocxImage.write(image, to: url)
+        case "ico", "icns":
+            try IconFile.write(image, to: url)
         default:
             guard let type = UTType(filenameExtension: ext),
                   let dest = CGImageDestinationCreateWithURL(url as CFURL, type.identifier as CFString, 1, nil)
@@ -533,6 +537,7 @@ enum Sheets {
         case "ods": try ODS.write(rows, to: url)
         case "pdf": try TablePDF.write(rows, to: url)
         case "tsv": try format(rows, sep: "\t").write(to: url, atomically: true, encoding: .utf8)
+        case "json": try DataFiles.writeRows(rows, to: url)
         default: try format(rows, sep: ",").write(to: url, atomically: true, encoding: .utf8)
         }
     }
@@ -674,47 +679,6 @@ final class SheetXML: NSObject, XMLParserDelegate {
         while rows.count < r { rows.append([]) }
         while rows[r - 1].count <= c { rows[r - 1].append("") }
         rows[r - 1][c] = v
-    }
-}
-
-// MARK: - Subtitles
-
-enum Subs {
-    struct Cue { var start: String, end: String, text: String }
-
-    static func convert(_ src: URL, to ext: String) throws -> URL {
-        let cues = parse(try String(contentsOf: src))
-        let out = output(for: src, ext: ext)
-        let body: String
-        switch ext {
-        case "srt":
-            body = cues.enumerated().map { "\($0 + 1)\n\(time($1.start, comma: true)) --> \(time($1.end, comma: true))\n\($1.text)\n" }
-                .joined(separator: "\n")
-        case "vtt":
-            body = "WEBVTT\n\n" + cues.map { "\(time($0.start, comma: false)) --> \(time($0.end, comma: false))\n\($0.text)\n" }
-                .joined(separator: "\n")
-        default:
-            body = cues.map(\.text).joined(separator: "\n") + "\n"
-        }
-        try body.write(to: out, atomically: true, encoding: .utf8)
-        return out
-    }
-
-    static func parse(_ text: String) -> [Cue] {
-        text.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n\n").compactMap { block in
-            let lines = block.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-            guard let i = lines.firstIndex(where: { $0.contains("-->") }) else { return nil }
-            let parts = lines[i].components(separatedBy: "-->").map { $0.trimmingCharacters(in: .whitespaces) }
-            let end = parts[1].split(separator: " ").first.map(String.init) ?? parts[1]  // drop VTT cue settings
-            return Cue(start: parts[0], end: end, text: lines[(i + 1)...].joined(separator: "\n").trimmingCharacters(in: .newlines))
-        }
-    }
-
-    /// SRT wants "00:00:01,000", VTT "00:00:01.000" (hours optional in VTT).
-    static func time(_ t: String, comma: Bool) -> String {
-        var t = t.replacingOccurrences(of: ",", with: ".")
-        if t.split(separator: ":").count == 2 { t = "00:" + t }
-        return comma ? t.replacingOccurrences(of: ".", with: ",") : t
     }
 }
 

@@ -1,6 +1,6 @@
 import AppKit
 
-enum Mode {
+enum Mode: Int, CaseIterable {
     case convert, tools, actions
     var title: String {
         switch self {
@@ -21,15 +21,15 @@ func each(_ title: String, _ f: @escaping (URL) throws -> URL) -> Op {
     Op(title: title) { try $0.map(f) }
 }
 
-enum Kind {
-    case image, audio, video, pdf, document, sheet, slides, subtitle, archive, other
+enum Kind: String, CaseIterable {
+    case image, audio, video, pdf, document, sheet, slides, subtitle, archive, data, font, other
 
     static func of(_ url: URL) -> Kind {
         var isDir: ObjCBool = false
         if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue,
            url.pathExtension.lowercased() != "rtfd" { return .other }
         switch normExt(url) {
-        case "jpg", "png", "heic", "tiff", "bmp", "gif", "webp", "avif", "svg": return .image
+        case "jpg", "png", "heic", "tiff", "bmp", "gif", "webp", "avif", "svg", "ico", "icns": return .image
         case "mp3", "m4a", "wav", "flac", "ogg", "opus", "aiff", "wma", "aac", "caf": return .audio
         case "mp4", "mov", "mkv", "webm", "avi", "wmv", "m4v": return .video
         case "pdf": return .pdf
@@ -37,7 +37,9 @@ enum Kind {
         case "epub": return Shell.pandoc == nil ? .other : .document
         case "csv", "tsv", "xlsx", "ods", "xls": return .sheet
         case "ppt", "pptx", "odp": return .slides
-        case "srt", "vtt": return .subtitle
+        case "srt", "vtt", "ass", "ssa", "lrc", "sbv": return .subtitle
+        case "json", "xml": return .data
+        case "ttf", "otf", "woff": return .font
         case "zip", "tar", "tar.gz", "gz", "rar", "7z": return .archive
         default: return .other
         }
@@ -59,27 +61,40 @@ enum Catalog {
         switch mode {
         case .convert:
             let own = Set(urls.map(normExt))
-            return targets(kind)
+            var list = kind == .font ? [] : targets(kind)
+            if kind == .font { for t in urls.flatMap(Fonts.targets) where !list.contains(t) { list.append(t) } }
+            return Layout.apply(list
                 .filter { !(own.count == 1 && own.contains($0)) }
-                .map { ext in each(ext.uppercased()) { try Convert.run($0, to: ext) } }
+                .map { ext in each(ext.uppercased()) { try Convert.run($0, to: ext) } }, kind, mode)
         case .tools:
-            return tools(kind, multi: urls.count > 1) + [Op(title: "Zip") { [try Archive.zip($0)] }]
+            return Layout.apply(tools(kind, multi: urls.count > 1) + [Op(title: "Zip") { [try Archive.zip($0)] }], kind, mode)
         case .actions:
-            return Actions.all
+            return Layout.apply(Actions.all, kind, mode)
+        }
+    }
+
+    /// Every slice a wheel can show for this kind, before the user's layout hides or reorders any.
+    static func allTitles(_ kind: Kind, _ mode: Mode) -> [String] {
+        switch mode {
+        case .convert: return targets(kind).map { $0.uppercased() }
+        case .tools: return tools(kind, multi: true).map(\.title) + ["Zip"]
+        case .actions: return Actions.all.map(\.title)
         }
     }
 
     static func targets(_ kind: Kind) -> [String] {
         let ff = Shell.ffmpeg != nil, office = Shell.soffice != nil
         switch kind {
-        case .image: return ["jpg", "png", "heic", "tiff", "bmp", "gif", "pdf", "docx"] + (ff ? ["webp", "avif"] : [])
+        case .image: return ["jpg", "png", "heic", "tiff", "bmp", "gif", "pdf", "docx", "ico", "icns"] + (ff ? ["webp", "avif"] : [])
         case .audio: return ff ? ["mp3", "m4a", "wav", "flac", "ogg", "opus", "aiff", "wma"] : ["m4a", "wav", "aiff", "flac"]
         case .video: return ff ? ["mp4", "mov", "mkv", "webm", "avi", "wmv", "gif", "mp3", "m4a"] : ["mp4", "mov", "m4a"]
         case .pdf: return ["png", "jpg", "txt", "md", "docx", "rtf", "html", "xlsx"] + (Shell.pandoc != nil ? ["epub"] : []) + (office ? ["pptx"] : [])
         case .document: return ["pdf", "docx", "rtf", "html", "txt", "md", "odt"] + (Shell.pandoc != nil ? ["epub"] : [])
-        case .sheet: return ["csv", "tsv", "xlsx", "ods", "pdf"]
+        case .sheet: return ["csv", "tsv", "xlsx", "ods", "pdf", "json"]
         case .slides: return office ? ["pdf", "png", "jpg"] : []
-        case .subtitle: return ["srt", "vtt", "txt"]
+        case .subtitle: return ["srt", "vtt", "ass", "lrc", "sbv", "txt"]
+        case .data: return ["json", "xml", "yaml", "csv", "xlsx"]
+        case .font: return ["woff", "ttf", "otf"]
         case .archive: return ["zip", "tar", "tar.gz"]
         case .other: return []
         }
@@ -133,6 +148,15 @@ enum Catalog {
                 each("Split Pages", PDFs.split),
                 each("Rotate", PDFs.rotate),
                 each("Strip Metadata", PDFs.strip),
+                Op(title: "Watermark") { urls in
+                    guard let text = onMain({ Prompt.text("Watermark", "Text to put across every page:", initial: "CONFIDENTIAL") }) else { return [] }
+                    return try urls.map { try Stamp.watermark($0, text) }
+                },
+                each("Page Numbers", Stamp.number),
+                Op(title: "Password") { urls in
+                    guard let pw = onMain({ Prompt.text("Password", "Password for the locked copy (the original stays as it is):", secret: true) }) else { return [] }
+                    return try urls.map { try Stamp.protect($0, pw) }
+                },
             ]
             if multi { ops.append(Op(title: "Merge") { [try PDFs.merge($0)] }) }
         case .archive:

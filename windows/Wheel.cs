@@ -64,11 +64,50 @@ class WheelWindow : Window
         FilesChanged();
         Mode = mode;
         theme = Theme.Current;
+        Opacity = Theme.Opacity;
         ops = Catalog.Ops(mode, files);
         hover = previewHover;
         if (!IsVisible) Show();
         surface.InvalidateVisual();
     }
+
+    /// <summary>Turns to the next wheel (Convert, Tools, Actions), or back with dir = -1. Like Filee's donut flip.</summary>
+    public void Flip(int dir)
+    {
+        if (!IsVisible) return;
+        ShowAt((Mode)(((int)Mode + dir + 3) % 3), null, default);
+        Click.Play();
+    }
+
+    // The scroll wheel flips too. Mid-drag, Explorer owns the mouse, so only a low-level hook hears it; it's installed only while we're visible.
+    delegate IntPtr HookProc(int code, IntPtr wParam, IntPtr lParam);
+    HookProc hookProc;
+    IntPtr hook;
+    int scrolled;
+
+    protected override void OnPropertyChanged(DependencyPropertyChangedEventArgs e)
+    {
+        base.OnPropertyChanged(e);
+        if (e.Property != IsVisibleProperty) return;
+        if (IsVisible && hook == IntPtr.Zero) { scrolled = 0; hook = SetWindowsHookEx(14, hookProc ??= OnMouse, GetModuleHandle(null), 0); }
+        else if (!IsVisible && hook != IntPtr.Zero) { UnhookWindowsHookEx(hook); hook = IntPtr.Zero; }
+    }
+
+    IntPtr OnMouse(int code, IntPtr wParam, IntPtr lParam)
+    {
+        if (code >= 0 && wParam == 0x020A)  // WM_MOUSEWHEEL; MSLLHOOKSTRUCT.mouseData's high word is the delta
+        {
+            scrolled += (short)(Marshal.ReadInt32(lParam, 8) >> 16);
+            if (Math.Abs(scrolled) >= 120) { var dir = scrolled < 0 ? 1 : -1; scrolled = 0; Dispatcher.BeginInvoke(() => Flip(dir)); }
+            return (IntPtr)1;  // don't scroll the window underneath as well
+        }
+        return CallNextHookEx(hook, code, wParam, lParam);
+    }
+
+    [DllImport("user32.dll")] static extern IntPtr SetWindowsHookEx(int id, HookProc proc, IntPtr mod, uint thread);
+    [DllImport("user32.dll")] static extern bool UnhookWindowsHookEx(IntPtr hook);
+    [DllImport("user32.dll")] static extern IntPtr CallNextHookEx(IntPtr hook, int code, IntPtr wParam, IntPtr lParam);
+    [DllImport("kernel32.dll")] static extern IntPtr GetModuleHandle(string name);
 
     void OnDrag(object sender, DragEventArgs e)
     {
@@ -111,10 +150,10 @@ class WheelWindow : Window
     }
 
     /// <summary>The wheel drawn over <paramref name="backdrop"/>, for screenshots of each theme.</summary>
-    public System.Windows.Media.Imaging.BitmapSource Render(Mode mode, List<string> sample, int? hoverIndex, Brush backdrop, System.Windows.Media.Imaging.BitmapSource sampleThumb = null)
+    public System.Windows.Media.Imaging.BitmapSource Render(Mode mode, List<string> sample, int? hoverIndex, Brush backdrop, System.Windows.Media.Imaging.BitmapSource sampleThumb = null, List<Op> ops = null)
     {
         (Mode, files, theme, hover, thumb, sizeText) = (mode, sample, Theme.Current, hoverIndex, sampleThumb, "2.4 MB");
-        ops = Catalog.Ops(mode, files);
+        this.ops = ops ?? Catalog.Ops(mode, files);
         var dv = new DrawingVisual();
         using (var dc = dv.RenderOpen())
         {
@@ -177,7 +216,11 @@ class WheelWindow : Window
             {
                 // Tools and actions: icon over a small caps label. Format slices stay text-only.
                 Label(dc, glyph.ToString(), new Point(at.X, at.Y - 9), 18, FontWeights.Normal, color, IconFont);
-                Label(dc, ops[i].Title.ToUpperInvariant(), new Point(at.X, at.Y + 12), ops[i].Title.Length > 11 ? 9 : 10, FontWeights.Bold, color);
+                // Crowded wheels put long two-word labels on two lines so neighbours don't touch.
+                var caps = ops[i].Title.ToUpperInvariant();
+                bool wrap = ops.Count > 8 && caps.Length > 10 && caps.Contains(' ');
+                if (wrap) caps = caps.Replace(' ', '\n');
+                Label(dc, caps, new Point(at.X, at.Y + (wrap ? 17 : 12)), caps.Length > 11 && !wrap ? 9 : 10, FontWeights.Bold, color);
             }
             else Label(dc, ops[i].Title, at, ops.Count > 10 ? 12 : 14.5, FontWeights.Bold, color);
         }
@@ -196,6 +239,7 @@ class WheelWindow : Window
         else Label(dc, files.Count > 0 && ops.Count == 0 ? "Nothing here" : Mode.Title(), new Point(C, C - 15), 13.5, FontWeights.Bold, text);
         Label(dc, sizeText, new Point(C, C + 10), 10.5, FontWeights.SemiBold, Theme.WithAlpha(text, 0.75));
         var keys = new[] { ("Shift", Mode.Convert), ("Ctrl", Mode.Tools), ("Alt", Mode.Actions) };
+        if (files.Count > 0 && hover == null) Label(dc, "Tab ⇄", new Point(C, C + 42), 8.5, FontWeights.SemiBold, Theme.WithAlpha(text, 0.45));
         for (int k = 0; k < keys.Length; k++)
             Label(dc, keys[k].Item1, new Point(C + (k - 1) * 27, C + 27), 9.5, FontWeights.SemiBold,
                 keys[k].Item2 == Mode ? theme.Accent : Theme.WithAlpha(text, 0.5));
@@ -205,12 +249,14 @@ class WheelWindow : Window
     // Segoe Fluent Icons ships with Windows 11; MDL2 Assets (same code points) with Windows 10.
     static readonly FontFamily IconFont = new("Segoe Fluent Icons, Segoe MDL2 Assets");
 
+    public static IReadOnlyDictionary<string, char> IconGlyphs => Icons;
     static readonly Dictionary<string, char> Icons = new()
     {
         ["Compress"] = '', ["Edit"] = '', ["Trim"] = '', ["Bleep"] = '', ["Channels"] = '', ["Visualize"] = '', ["Split"] = '', ["Speed"] = '', ["Crop"] = '', ["Redact"] = '', ["Annotate"] = '', ["Add BG"] = '', ["Resize 50%"] = '', ["Rotate"] = '', ["Flip"] = '',
         ["Grayscale"] = '', ["Strip Metadata"] = '', ["Make PDF"] = '', ["Zip"] = '',
         ["Snapshot"] = '', ["Extract Audio"] = '', ["Mute"] = '', ["Speed 2×"] = '',
         ["Join"] = '', ["Normalize"] = '', ["Trim Silence"] = '', ["Mono"] = '',
+        ["Watermark"] = '\uE8D2', ["Page Numbers"] = '\uE8FD', ["Organize"] = '\uE8CB', ["Password"] = '\uE72E',
         ["Split Pages"] = '', ["Merge"] = '', ["Extract"] = '',
         ["Copy"] = '', ["Copy Path"] = '', ["Terminal"] = '', ["Open"] = '', ["Float"] = '\uE718', ["Share"] = '\uE72D', ["Move To…"] = '',
     };
@@ -220,6 +266,7 @@ class WheelWindow : Window
         var ft = new FormattedText(s, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
             new Typeface(family ?? Font, FontStyles.Normal, weight, FontStretches.Normal), size, new SolidColorBrush(color),
             VisualTreeHelper.GetDpi(surface).PixelsPerDip);
+        if (s.Contains('\n')) { ft.MaxTextWidth = ft.Width + 1; ft.TextAlignment = TextAlignment.Center; }  // centre each line
         var at = new Point(p.X - ft.Width / 2, p.Y - ft.Height / 2);
         if (theme.IsGlass)
         {

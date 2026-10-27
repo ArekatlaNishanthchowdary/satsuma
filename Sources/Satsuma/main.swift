@@ -34,10 +34,14 @@ if let i = CommandLine.arguments.firstIndex(of: "--shot"), CommandLine.arguments
         try! Organizer.snapshot(Img.makePDF(pages)).representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: CommandLine.arguments[i + 2]))
         exit(0)
     }
+    if CommandLine.arguments[i + 1] == "customizer" {
+        try! Customizer.snapshot().representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: CommandLine.arguments[i + 2]))
+        exit(0)
+    }
     let view = WheelView(frame: NSRect(x: 0, y: 0, width: WheelPanel.size, height: WheelPanel.size))
-    view.theme = Theme.all.first { $0.name == "Midnight" }!
-    view.mode = ["tools": .tools, "actions": .actions][CommandLine.arguments[i + 1]] ?? .convert
-    view.files = [URL(fileURLWithPath: "/tmp/Vacation.jpg")]
+    view.theme = Theme.all.first { $0.name == (CommandLine.arguments.count > i + 3 ? CommandLine.arguments[i + 3] : "Midnight") }!
+    view.mode = ["tools": .tools, "actions": .actions, "pdf-tools": .tools][CommandLine.arguments[i + 1]] ?? .convert
+    view.files = [URL(fileURLWithPath: CommandLine.arguments[i + 1] == "pdf-tools" ? "/tmp/Report.pdf" : "/tmp/Vacation.jpg")]
     view.ops = Catalog.ops(view.mode, view.files)
     view.hover = view.mode == .convert ? nil : 0
     view.sizeText = "2.4 MB"
@@ -148,6 +152,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var wasDown = false, downCount = 0, readCount = -1
     private var dragFiles: [URL] = []
     private var lastFlags: NSEvent.ModifierFlags = []
+    private var lastTab = false
 
     func applicationDidFinishLaunching(_ note: Notification) {
         status.button?.image = NSImage(systemSymbolName: "arrow.triangle.2.circlepath", accessibilityDescription: "Satsuma")
@@ -162,6 +167,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // permission is needed. A drag started within one tick of mouse-down can be missed.
         let timer = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in self?.tick() }
         RunLoop.main.add(timer, forMode: .common)
+        Watch.failed = { file, error in notify("Couldn't convert \(file.lastPathComponent)", error.localizedDescription) }
+        Watch.start()
     }
 
     private func tick() {
@@ -177,6 +184,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let flags = NSEvent.modifierFlags.intersection([.shift, .command, .control])
         let pressed = flags.subtracting(lastFlags)
         lastFlags = flags
+        // Tab flips the open wheel. ponytail: reads key state without an event tap; if macOS hides it, scrolling still flips.
+        let tab = CGEventSource.keyState(.combinedSessionState, key: 0x30)
+        defer { lastTab = tab }
+        if tab && !lastTab && down && wheel.isVisible { wheel.flip(flags.contains(.shift) ? -1 : 1); return }
         guard down, dragBoard.changeCount != downCount else { return }
         if readCount != dragBoard.changeCount {
             readCount = dragBoard.changeCount
@@ -237,9 +248,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             item.image = swatch(theme.accent)
             themes.addItem(item)
         }
+        themes.addItem(.separator())
+        themes.addItem(BlockItem("Accent Colour…") { [weak self] in self?.pickAccent() })
+        if Theme.customAccent != nil { themes.addItem(BlockItem("Theme's Own Accent") { [weak self] in Theme.customAccent = nil; self?.previewTheme() }) }
+        let opacity = NSMenu()
+        for pct in [100, 90, 80, 70, 60] {
+            let item = BlockItem("\(pct)%") { [weak self] in Theme.opacity = CGFloat(pct) / 100; self?.previewTheme() }
+            item.state = Int((Theme.opacity * 100).rounded()) == pct ? .on : .off
+            opacity.addItem(item)
+        }
+        let opacityItem = NSMenuItem(title: "Wheel Opacity", action: nil, keyEquivalent: "")
+        opacityItem.submenu = opacity
+        themes.addItem(opacityItem)
         let themeItem = NSMenuItem(title: "Theme", action: nil, keyEquivalent: "")
         themeItem.submenu = themes
         menu.addItem(themeItem)
+        menu.addItem(BlockItem("Customize Wheel…") { Customizer.show() })
         menu.addItem(BlockItem("Preview Wheel") { [weak self] in self?.previewTheme() })
         let click = BlockItem("Click Sound on Hover") { Click.enabled.toggle(); Click.play() }
         click.state = Click.enabled ? .on : .off
@@ -252,6 +276,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(login)
+        let watch = NSMenu()
+        for (dir, ext) in Watch.all.sorted(by: { $0.key < $1.key }) {
+            let item = BlockItem("\((dir as NSString).abbreviatingWithTildeInPath) → \(ext.uppercased())") { Watch.remove(dir) }
+            item.state = .on
+            item.toolTip = "Click to stop watching"
+            watch.addItem(item)
+        }
+        if !watch.items.isEmpty { watch.addItem(.separator()) }
+        watch.addItem(BlockItem("Add Folder…") { Watch.addInteractively() })
+        let watchItem = NSMenuItem(title: "Watch Folders", action: nil, keyEquivalent: "")
+        watchItem.submenu = watch
+        menu.addItem(watchItem)
         menu.addItem(BlockItem("Quit Satsuma") { NSApp.terminate(nil) })
     }
 
@@ -264,6 +300,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
             if NSEvent.pressedMouseButtons & 1 == 0 { self?.wheel.orderOut(nil) }
         }
+    }
+
+    private func pickAccent() {
+        NSApp.activate(ignoringOtherApps: true)
+        let panel = NSColorPanel.shared
+        panel.showsAlpha = false
+        panel.color = Theme.current.accent
+        panel.setTarget(self)
+        panel.setAction(#selector(accentChanged(_:)))
+        panel.isContinuous = false
+        panel.orderFront(nil)
+    }
+
+    @objc private func accentChanged(_ panel: NSColorPanel) {
+        Theme.customAccent = panel.color
+        previewTheme()
     }
 
     private func swatch(_ color: NSColor) -> NSImage {
