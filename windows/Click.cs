@@ -1,7 +1,8 @@
 using System;
 using System.IO;
-using System.Media;
 using Microsoft.Win32;
+using Windows.Media.Core;
+using Windows.Media.Playback;
 
 namespace Satsuma;
 
@@ -16,12 +17,22 @@ static class Click
         set => Registry.CurrentUser.CreateSubKey(Key).SetValue("ClickSound", value ? 1 : 0);
     }
 
-    static readonly SoundPlayer Player = new(new MemoryStream(Wav()));
+    // Not System.Media.SoundPlayer: winmm (PlaySound/waveOut) is silent on some PCs, e.g. with Nahimic or NVIDIA audio layers.
+    // The WinRT player goes through WASAPI like everything else. No SMTC, or the volume flyout would show "Satsuma playing".
+    static readonly Lazy<MediaPlayer> Player = new(() =>
+    {
+        var p = new MediaPlayer { AudioCategory = MediaPlayerAudioCategory.SoundEffects, Source = MediaSource.CreateFromStream(new MemoryStream(Wav()).AsRandomAccessStream(), "audio/wav") };
+        p.CommandManager.IsEnabled = false;
+        return p;
+    });
+
+    /// <summary>Opens the player ahead of time, so the first hover isn't late.</summary>
+    public static void Warm() { if (Enabled) try { _ = Player.Value; } catch { } }
 
     public static void Play()
     {
         if (!Enabled) return;
-        try { Player.Play(); } catch { }  // no audio device: stay silent
+        try { var p = Player.Value; p.PlaybackSession.Position = TimeSpan.Zero; p.Play(); } catch { }  // no audio device: stay silent
     }
 
     /// <summary>

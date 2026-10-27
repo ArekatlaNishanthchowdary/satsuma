@@ -50,6 +50,7 @@ static class Program
             return 0;
         }
         var controller = new Controller(tray: true);
+        Click.Warm();
         app.Run();
         GC.KeepAlive(controller);
         return 0;
