@@ -78,18 +78,15 @@ and Save writes a new file beside the original. "Compress to size" asks for a ta
 </p>
 
 <sub>¹ Mac only · ² needs ffmpeg · ³ needs pandoc · ⁴ needs LibreOffice. Without ffmpeg, audio and video fall back to the
-OS encoders (fewer formats, no editors).</sub>
+OS encoders (fewer formats, no editors). See [Optional engines](#optional-engines-ffmpeg-pandoc-libreoffice).</sub>
 
 **How many?** Counted as input format → output format pairs with ffmpeg, pandoc and LibreOffice installed, Satsuma offers
 **343 conversions on Mac and 311 on Windows**, plus **41 tools** (Mac; 40 on Windows) and **7 actions**. Without the
 optional engines the counts are lower.
 
 Satsuma uses what your OS already ships with (ImageIO, AVFoundation, PDFKit and Liquid Glass on macOS; Media Foundation,
-Windows.Data.Pdf and `tar` on Windows). **ffmpeg** and **pandoc** are optional, and Satsuma picks them up automatically:
-
-- **Windows:** `winget install ffmpeg`, `winget install pandoc` and `winget install TheDocumentFoundation.LibreOffice`, or use the tray menu's **Install…** items.
-- **Intel Mac:** Homebrew no longer ships Intel builds, so put the standalone
-  [ffmpeg](https://evermeet.cx/ffmpeg/) and [pandoc](https://github.com/jgm/pandoc/releases) binaries in `~/.local/bin`.
+Windows.Data.Pdf and `tar` on Windows). **ffmpeg**, **pandoc** and **LibreOffice** are optional, and Satsuma picks them up
+automatically. See [Optional engines](#optional-engines-ffmpeg-pandoc-libreoffice) below for what each one adds and how to install it.
 
 ## Themes
 
@@ -124,6 +121,56 @@ On **Windows** the glass is drawn: translucent layers, a tint, a specular highli
 </table>
 
 Checksums are in `SHA256SUMS.txt` on each release.
+
+### Optional engines (ffmpeg, pandoc, LibreOffice)
+
+| Engine | What it adds |
+|---|---|
+| **ffmpeg** | All audio/video formats (MKV, WebM, AVI, WMV, OGG, Opus, WMA, GIF…), WebP/AVIF images, and every audio/video editor (Trim, Split, Speed, Crop, Redact, Bleep, Channels, Visualize, Compress to size). |
+| **pandoc** | EPUB output from documents and PDFs, and better Markdown/DOCX conversions. |
+| **LibreOffice** | PPT/PPTX/ODP slides, XLS input, PDF → PPTX. |
+
+Without ffmpeg, macOS can only read MP4, MOV, M4V, M4A, MP3, WAV, AIFF, CAF and FLAC by itself. An MKV or WebM then
+fails with *"macOS can't read MKV files by itself"* until ffmpeg is installed.
+
+**Windows**
+
+```
+winget install ffmpeg
+winget install pandoc
+winget install TheDocumentFoundation.LibreOffice
+```
+
+Or use the tray menu's **Install…** items.
+
+**Intel Mac: no Homebrew.** Homebrew has moved Intel Macs to Tier 3 and no longer ships Intel bottles, so
+`brew install ffmpeg` / `brew install pandoc` won't work (or builds for hours from source). Use the standalone Intel builds
+instead. They need no admin rights:
+
+```sh
+mkdir -p ~/.local/bin && cd /tmp
+
+# ffmpeg (static Intel build from evermeet.cx)
+curl -LO https://evermeet.cx/ffmpeg/ffmpeg-9.0.2.zip
+unzip -o ffmpeg-9.0.2.zip -d ~/.local/bin
+
+# pandoc (official x86_64 macOS build)
+curl -LO https://github.com/jgm/pandoc/releases/download/3.13/pandoc-3.13-x86_64-macOS.zip
+unzip -o -j pandoc-3.13-x86_64-macOS.zip '*/bin/pandoc' -d ~/.local/bin
+
+chmod +x ~/.local/bin/ffmpeg ~/.local/bin/pandoc
+~/.local/bin/ffmpeg -version | head -1 && ~/.local/bin/pandoc --version | head -1
+```
+
+Newer versions are listed at [evermeet.cx/ffmpeg](https://evermeet.cx/ffmpeg/) and
+[pandoc releases](https://github.com/jgm/pandoc/releases) (pick the `x86_64-macOS.zip`). LibreOffice has an Intel
+`.dmg` at [libreoffice.org](https://www.libreoffice.org/download/download-libreoffice/).
+
+Then **quit and reopen Satsuma**. It looks for the engines only at launch, in this order: `~/.local/bin`,
+`/usr/local/bin`, `/opt/homebrew/bin`, `/usr/bin`.
+
+> **Several Mac accounts?** `~/.local/bin` belongs to one user. Either repeat the steps in each account, or install once for
+> everyone with an admin password: `sudo cp ~/.local/bin/ffmpeg ~/.local/bin/pandoc /usr/local/bin/`.
 
 ## Build from source
 
