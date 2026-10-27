@@ -207,7 +207,7 @@ class WheelWindow : Window
 
     static readonly Dictionary<string, char> Icons = new()
     {
-        ["Compress"] = '', ["Edit"] = '', ["Crop"] = '', ["Redact"] = '', ["Annotate"] = '', ["Add BG"] = '', ["Resize 50%"] = '', ["Rotate"] = '', ["Flip"] = '',
+        ["Compress"] = '', ["Edit"] = '', ["Trim"] = '', ["Bleep"] = '', ["Channels"] = '', ["Visualize"] = '', ["Split"] = '', ["Speed"] = '', ["Crop"] = '', ["Redact"] = '', ["Annotate"] = '', ["Add BG"] = '', ["Resize 50%"] = '', ["Rotate"] = '', ["Flip"] = '',
         ["Grayscale"] = '', ["Strip Metadata"] = '', ["Make PDF"] = '', ["Zip"] = '',
         ["Snapshot"] = '', ["Extract Audio"] = '', ["Mute"] = '', ["Speed 2×"] = '',
         ["Join"] = '', ["Normalize"] = '', ["Trim Silence"] = '', ["Mono"] = '',

@@ -2,6 +2,8 @@ import AppKit
 
 enum EditTool: String, CaseIterable {
     case edit = "Edit", crop = "Crop", redact = "Redact", annotate = "Annotate", background = "Add Background"
+    // Audio/video; Crop and Redact also work on video, using one frame as the canvas.
+    case trim = "Trim", bleep = "Bleep", split = "Split", channels = "Channels", visualize = "Visualize", speed = "Speed"
 }
 
 /// Closure target for AppKit controls; kept alive by the editor that owns the control.
@@ -26,6 +28,9 @@ private final class Stage: NSView {
     var image: CGImage?
     var frameRect: CGRect?   // in shown-image pixels
     var liveRect: CGRect?
+    var fills: [CGRect] = []     // bleep ranges
+    var lines: [CGFloat] = []    // split points, as x in shown-image pixels
+    var dashedLines = false
     var accent = NSColor.orange
     var onDrag: ((CGPoint, CGPoint, Bool) -> Void)?
     private var from: CGPoint?
@@ -59,6 +64,16 @@ private final class Stage: NSView {
             dim.fill()
             accent.setStroke()
             let edge = NSBezierPath(rect: toView(f)); edge.lineWidth = 2; edge.stroke()
+        }
+        accent.withAlphaComponent(0.45).setFill()
+        fills.forEach { NSBezierPath(rect: toView($0)).fill() }
+        for x in lines {
+            let v = toView(CGRect(x: x, y: 0, width: 0, height: CGFloat(image.height)))
+            let line = NSBezierPath()
+            line.move(to: CGPoint(x: v.minX, y: v.minY)); line.line(to: CGPoint(x: v.minX, y: v.maxY))
+            line.lineWidth = 3
+            if dashedLines { line.setLineDash([6, 4], count: 2, phase: 0) }
+            accent.setStroke(); line.stroke()
         }
         if let l = liveRect {
             accent.setStroke()
@@ -101,6 +116,12 @@ final class Editor: NSObject, NSWindowDelegate {
     private var markColor = NSColor.systemRed, markWidth: CGFloat = 6
     private let textField = NSTextField(string: "Note")
     private var backdrop: BackgroundStyle
+    // Audio/video: the stage shows a waveform or frame strip whose width spans the whole duration.
+    private var media: MediaInfo?
+    private var cuts: [Double] = [], parts = 2
+    private var channelMode = ChannelMode.stereo, gainL = 1.0, gainR = 1.0, speed = 2.0, waveStyle = WaveStyle.wave
+    private lazy var status: NSTextField = text("", size: 12, weight: .semibold)
+    private func time(_ x: CGFloat) -> Double { Double(min(max(x / CGFloat(full.width), 0), 1)) * (media?.duration ?? 0) }
 
     static func open(_ url: URL, _ tool: EditTool) throws {
         let e = try Editor(url, tool)
@@ -112,7 +133,10 @@ final class Editor: NSObject, NSWindowDelegate {
     init(_ url: URL, _ tool: EditTool) throws {
         self.url = url
         self.tool = tool
-        full = try Img.load(url)
+        let kind = Kind.of(url)
+        let info = kind == .audio || kind == .video ? try AVEdit.probe(url) : nil
+        full = try info.map { tool == .crop || tool == .redact ? try AVEdit.frame(url, $0) : try AVEdit.picture(url, $0, Theme.current.accent) } ?? Img.load(url)
+        media = info
         (small, s) = try ImageEdit.shrink(full, maxSide: 1400)
         backdrop = BackgroundStyle(from: theme.accent, to: theme.accent.blended(withFraction: 0.55, of: .black)!)
         window = EditorWindow(contentRect: NSRect(x: 0, y: 0, width: 1080, height: 700),
@@ -281,6 +305,26 @@ final class Editor: NSObject, NSWindowDelegate {
             label("Text")
             textField.widthAnchor.constraint(equalToConstant: 244).isActive = true
             add(textField)
+        case .trim:
+            hint("Drag across the timeline to choose the part to keep.")
+            add(status)
+        case .bleep:
+            hint("Drag over each part to bleep: it's silenced and covered with a tone. ⌘Z removes the last one.")
+            add(status)
+        case .split:
+            hint("Click the timeline where each cut goes, or leave it empty and pick a number of equal parts.")
+            slider("Parts", 2, 10, Double(parts)) { [weak self] v in self?.parts = Int(v.rounded()); self?.refresh() }
+            add(status)
+        case .channels:
+            choice("Output", ChannelMode.allCases.map { ($0.rawValue, $0) }) { [weak self] v in self?.channelMode = v }
+            slider("Left volume %", 0, 200, 100) { [weak self] v in self?.gainL = v / 100 }
+            slider("Right volume %", 0, 200, 100) { [weak self] v in self?.gainR = v / 100 }
+        case .visualize:
+            hint("Makes a 1280×720 video of the sound, in the theme colour.")
+            choice("Style", WaveStyle.allCases.map { ($0.rawValue, $0) }) { [weak self] v in self?.waveStyle = v }
+        case .speed:
+            choice("Speed", [("2×", 2.0), ("4×", 4), ("1.5×", 1.5), ("0.75×", 0.75), ("0.5×", 0.5), ("0.25×", 0.25)]) { [weak self] v in self?.speed = v }
+            hint("Sound keeps its pitch.")
         case .background:
             let pairs: [(NSColor, NSColor)] = [
                 (theme.accent, theme.accent.blended(withFraction: 0.55, of: .black)!),
@@ -321,6 +365,14 @@ final class Editor: NSObject, NSWindowDelegate {
             crop = r.width > 2 && r.height > 2 ? r : nil
         case .redact:
             if done { if r.width > 2 && r.height > 2 { boxes.append(r) }; live = nil } else { live = r }
+        case .trim:
+            // Time ranges are full-height strips of the timeline picture.
+            crop = r.width > 2 ? CGRect(x: r.minX, y: 0, width: r.width, height: CGFloat(full.height)) : nil
+        case .bleep:
+            let strip = CGRect(x: r.minX, y: 0, width: r.width, height: CGFloat(full.height))
+            if done { if r.width > 2 { boxes.append(strip) }; live = nil } else { live = strip }
+        case .split:
+            if done { cuts.append(time(b.x)) }
         case .annotate:
             if markKind == .pen {
                 if current == nil { current = Mark(kind: .pen, points: [a], color: markColor, width: markWidth) }
@@ -339,14 +391,15 @@ final class Editor: NSObject, NSWindowDelegate {
     }
 
     private func undo() {
-        if tool == .redact, !boxes.isEmpty { boxes.removeLast() }
+        if tool == .redact || tool == .bleep, !boxes.isEmpty { boxes.removeLast() }
+        if tool == .split, !cuts.isEmpty { cuts.removeLast() }
         if tool == .annotate, !marks.isEmpty { marks.removeLast() }
         refresh()
     }
 
     private func reset() {
         (adjust, crop, current, live) = (Adjustments(), nil, nil, nil)
-        boxes.removeAll(); marks.removeAll()
+        boxes.removeAll(); marks.removeAll(); cuts.removeAll()
         backdrop = BackgroundStyle(from: theme.accent, to: theme.accent.blended(withFraction: 0.55, of: .black)!)
         resets.forEach { $0() }
         refresh()
@@ -366,17 +419,34 @@ final class Editor: NSObject, NSWindowDelegate {
                 var m = m; m.points = m.points.map { CGPoint(x: $0.x * k, y: $0.y * k) }; m.width *= k; return m
             })
         case .background: return try ImageEdit.addBackground(img, backdrop)
+        case .trim, .bleep, .split, .channels, .visualize, .speed: return img  // time tools draw on the stage instead
         }
     }
 
     private func refresh() {
         stage.image = (try? apply(small, s, final: false)) ?? small
-        stage.frameRect = tool == .crop ? crop.map { scaled($0, s) } : nil
+        stage.frameRect = tool == .crop || tool == .trim ? crop.map { scaled($0, s) } : nil
+        stage.fills = tool == .bleep ? boxes.map { scaled($0, s) } : []
+        if tool == .split, let m = media {
+            let shown = cuts.isEmpty ? (1..<parts).map { m.duration * Double($0) / Double(parts) } : cuts
+            stage.lines = shown.map { CGFloat($0 / m.duration) * CGFloat(small.width) }
+            stage.dashedLines = cuts.isEmpty
+        }
+        if let m = media {
+            let c = AVEdit.clock
+            switch tool {
+            case .trim: status.stringValue = crop.map { "\(c(time($0.minX))) – \(c(time($0.maxX)))  (\(String(format: "%.1f", time($0.maxX) - time($0.minX))) s of \(String(format: "%.1f", m.duration)) s)" } ?? "Length \(c(m.duration))"
+            case .bleep: status.stringValue = boxes.isEmpty ? "Nothing bleeped yet" : boxes.map { "\(c(time($0.minX))) – \(c(time($0.maxX)))" }.joined(separator: "\n")
+            case .split: status.stringValue = cuts.isEmpty ? "\(parts) equal parts" : "\(cuts.count + 1) parts, cut at " + cuts.sorted().map(c).joined(separator: ", ")
+            default: break
+            }
+        }
         stage.liveRect = live.map { scaled($0, s) }
         stage.needsDisplay = true
     }
 
     private func save() {
+        if media != nil { saveMedia(); return }
         do {
             if tool == .crop && crop == nil { throw Fail("Drag on the picture to choose what to keep first.") }
             let suffix = [EditTool.edit: " edited", .crop: " cropped", .redact: " redacted", .annotate: " annotated", .background: " background"][tool]!
@@ -392,6 +462,53 @@ final class Editor: NSObject, NSWindowDelegate {
         }
     }
 
+    /// ffmpeg can take minutes, so it runs off the main thread; the window stays up, dimmed, until it's done.
+    private func saveMedia() {
+        guard let m = media else { return }
+        let (url, boxes, cuts, parts, style) = (url, boxes, cuts, parts, redactStyle)
+        let (mode, l, r, speed, wave, accent) = (channelMode, gainL, gainR, speed, waveStyle, theme.accent)
+        let job: () throws -> URL
+        switch tool {
+        case .crop: guard let c = crop else { return complain() }; job = { try AVEdit.cropVideo(url, c) }
+        case .redact: job = { try AVEdit.redactVideo(url, boxes, style) }
+        case .trim: guard let c = crop else { return complain() }; let (a, b) = (time(c.minX), time(c.maxX)); job = { try AVEdit.trim(url, from: a, to: b) }
+        case .bleep: let ranges = boxes.map { (time($0.minX), time($0.maxX)) }; job = { try AVEdit.bleep(url, ranges) }
+        case .split: job = { try AVEdit.split(url, m, cuts: cuts, parts: parts) }
+        case .channels: job = { try AVEdit.channels(url, mode, l, r) }
+        case .visualize: job = { try AVEdit.visualize(url, wave, accent) }
+        case .speed: job = { try AVEdit.speed(url, m, speed) }
+        default: return
+        }
+        let title = window.title
+        window.title = "Saving… " + title
+        window.contentView?.alphaValue = 0.5
+        window.ignoresMouseEvents = true
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = Result { try job() }
+            DispatchQueue.main.async { [self] in
+                switch result {
+                case .success(let out):
+                    NSWorkspace.shared.activateFileViewerSelecting([out])
+                    window.close()
+                case .failure(let error):
+                    window.title = title
+                    window.contentView?.alphaValue = 1
+                    window.ignoresMouseEvents = false
+                    let alert = NSAlert()
+                    alert.messageText = "Couldn't save"
+                    alert.informativeText = error.localizedDescription
+                    alert.beginSheetModal(for: window)
+                }
+            }
+        }
+    }
+
+    private func complain() {
+        let alert = NSAlert()
+        alert.messageText = "Drag on the timeline to choose the part first."
+        alert.beginSheetModal(for: window)
+    }
+
     /// For `--shot editor-<tool>`: the window's content as a picture, with a little demo state.
     static func snapshot(_ url: URL, _ tool: EditTool) throws -> NSBitmapImageRep {
         let e = try Editor(url, tool)
@@ -403,7 +520,10 @@ final class Editor: NSObject, NSWindowDelegate {
         case .annotate:
             e.marks = [Mark(kind: .arrow, points: [CGPoint(x: w * 0.2, y: h * 0.8), CGPoint(x: w * 0.5, y: h * 0.45)], color: .systemRed, width: max(4, w / 150)),
                        Mark(kind: .text, points: [CGPoint(x: w * 0.08, y: h * 0.82)], color: .systemRed, width: max(4, w / 150), text: "Look here")]
-        case .background: break
+        case .background, .channels, .visualize, .speed: break
+        case .trim: e.crop = CGRect(x: w * 0.2, y: 0, width: w * 0.45, height: h)
+        case .bleep: e.boxes = [CGRect(x: w * 0.3, y: 0, width: w * 0.06, height: h), CGRect(x: w * 0.7, y: 0, width: w * 0.08, height: h)]
+        case .split: e.cuts = [e.media!.duration * 0.3, e.media!.duration * 0.75]
         }
         e.refresh()
         let view = e.window.contentView!
@@ -416,15 +536,18 @@ final class Editor: NSObject, NSWindowDelegate {
 
 /// Asks for a target size in bytes, or nil when cancelled. Main thread only.
 enum SizePrompt {
-    static func ask(_ file: URL) -> Int? {
+    static let image = [("100 KB", 100_000), ("250 KB", 250_000), ("500 KB", 500_000), ("1 MB", 1_000_000), ("2 MB", 2_000_000), ("5 MB", 5_000_000)]
+    static let audio = [("1 MB", 1_000_000), ("2 MB", 2_000_000), ("5 MB", 5_000_000), ("10 MB", 10_000_000)]
+    static let video = [("8 MB", 8_000_000), ("10 MB", 10_000_000), ("25 MB", 25_000_000), ("50 MB", 50_000_000), ("100 MB", 100_000_000)]
+
+    static func ask(_ file: URL, _ sizes: [(String, Int)]) -> Int? {
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         alert.messageText = "Compress to size"
         alert.informativeText = "Make \(file.lastPathComponent) at most:"
-        let sizes = [("100 KB", 100_000), ("250 KB", 250_000), ("500 KB", 500_000), ("1 MB", 1_000_000), ("2 MB", 2_000_000), ("5 MB", 5_000_000)]
         let pop = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 160, height: 26))
         pop.addItems(withTitles: sizes.map(\.0))
-        pop.selectItem(at: 3)
+        pop.selectItem(at: min(3, sizes.count - 1))
         alert.accessoryView = pop
         alert.addButton(withTitle: "Compress")
         alert.addButton(withTitle: "Cancel")

@@ -76,6 +76,7 @@ static class SelfTest
             foreach (var ext in new[] { "mp3", "m4a" })
                 Check(new FileInfo(AV.Transcode(F("a.wav"), Paths.Output(F("a.wav"), ext), AV.Profile(ext))).Length > 1000, $"wav → {ext} (Windows encoder)");
             if (Shell.FFmpeg != null) Check(new FileInfo(Converter.Run(F("a.wav"), "ogg")).Length > 1000, "wav → ogg (ffmpeg)");
+            if (Shell.FFmpeg != null) MediaChecks(dir);
             if (Shell.Pandoc != null)
             {
                 File.WriteAllText(F("m.md"), "# Title\n\nSome *text*.");
@@ -100,6 +101,40 @@ static class SelfTest
             return 1;
         }
         finally { try { Directory.Delete(dir, true); } catch { } }
+    }
+
+    /// <summary>The audio/video editors' ffmpeg jobs, on a generated 4 s test video and a stereo tone.</summary>
+    static void MediaChecks(string dir)
+    {
+        void Check(bool ok, string what) { Console.WriteLine(ok ? $"ok   {what}" : $"FAIL {what}"); if (!ok) throw new Fail(what); }
+        bool Near(double a, double b) => Math.Abs(a - b) < 0.25;
+        string v = Path.Combine(dir, "v.mp4"), a = Path.Combine(dir, "a.wav");
+        Shell.FF("-f", "lavfi", "-i", "testsrc=size=320x240:rate=25:duration=4", "-f", "lavfi", "-i", "sine=frequency=440:duration=4",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", v);
+        Shell.FF("-f", "lavfi", "-i", "sine=frequency=440:duration=4", "-ac", "2", a);
+        var m = AVEdit.Probe(v);
+        Check(Near(m.Duration, 4) && m.HasVideo && m.HasAudio && m.Width == 320 && m.Height == 240, "probe video");
+        Check(Near(AVEdit.Probe(AVEdit.Trim(v, 1, 3)).Duration, 2), "trim 1–3 s");
+        Check(Near(AVEdit.Probe(AVEdit.Speed(v, m, 2)).Duration, 2), "speed 2×");
+        Check(AVEdit.Atempo(0.25) == "atempo=0.5,atempo=0.5" && AVEdit.Atempo(4) == "atempo=2,atempo=2", "atempo chains past 0.5–2");
+        var cropped = AVEdit.Probe(AVEdit.CropVideo(v, new System.Windows.Rect(10, 10, 100, 80)));
+        Check(cropped.Width == 100 && cropped.Height == 80, "video crop");
+        foreach (var style in new[] { RedactStyle.Blur, RedactStyle.Pixelate, RedactStyle.Black })
+            Check(AVEdit.Probe(AVEdit.RedactVideo(v, new() { new(20, 20, 120, 90), new(200, 100, 60, 60) }, style)).Width == 320, $"video redact ({style})");
+        var small = AVEdit.CompressTo(v, 100_000);
+        Check(new FileInfo(small).Length <= 100_000, $"compress video to 100 KB ({new FileInfo(small).Length / 1000} KB)");
+        Check(AVEdit.Picture(v, m, System.Windows.Media.Colors.Orange).PixelWidth == 1600, "video frame strip + waveform");
+
+        var am = AVEdit.Probe(a);
+        Check(AVEdit.Picture(a, am, System.Windows.Media.Colors.Orange).PixelWidth == 1600, "waveform picture");
+        Check(Near(AVEdit.Probe(AVEdit.Bleep(a, new() { (1, 2), (2.5, 3) })).Duration, 4), "bleep keeps the length");
+        Check(File.ReadAllBytes(AVEdit.Channels(a, ChannelMode.Left, 1, 1))[22] == 1, "channels: left only is mono");
+        Check(File.ReadAllBytes(AVEdit.Channels(a, ChannelMode.Swap, 1, 0.5))[22] == 2, "channels: swap stays stereo");
+        var viz = AVEdit.Probe(AVEdit.Visualize(a, WaveStyle.Wave, System.Windows.Media.Colors.Orange));
+        Check(viz.Width == 1280 && viz.Height == 720 && Near(viz.Duration, 4), "visualize → 1280×720 video");
+        Check(Directory.GetFiles(AVEdit.Split(a, am, new(), 2)).Length == 2, "split into 2 equal parts");
+        Check(Directory.GetFiles(AVEdit.Split(v, m, new() { 1, 2.5 }, 2)).Length == 3, "split video at 1 s and 2.5 s");
+        Check(new FileInfo(AVEdit.CompressTo(a, 60_000)).Length <= 60_000, "compress audio to 60 KB");
     }
 
     /// <summary>The pure functions behind the image editors (the windows themselves are checked by eye via --shots).</summary>
@@ -162,9 +197,21 @@ static class SelfTest
             dc.DrawEllipse(new SolidColorBrush(Color.FromRgb(255, 235, 180)), null, new System.Windows.Point(820, 330), 90, 90);
             dc.DrawEllipse(new SolidColorBrush(Color.FromRgb(40, 50, 70)), null, new System.Windows.Point(400, 1000), 900, 420);
         }), sample);
+        string audio = Path.Combine(dir, "sample.wav"), video = Path.Combine(dir, "sample.mp4");
+        if (Shell.FFmpeg != null)
+        {
+            // Speech-like bursts so the waveform has shape.
+            Shell.FF("-f", "lavfi", "-i", "sine=frequency=220:duration=12,volume='0.2+0.8*abs(sin(t*1.7))':eval=frame", "-ac", "2", audio);
+            Shell.FF("-f", "lavfi", "-i", "testsrc2=size=640x360:rate=25:duration=12", "-f", "lavfi", "-i", "sine=frequency=330:duration=12",
+                "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", video);
+        }
         foreach (var tool in Enum.GetValues<EditTool>())
-            Img.Save(Editor.Snapshot(sample, tool, e => e.Demo()), Path.Combine(dir, $"editor-{tool}.png"));
-        File.Delete(sample);
+        {
+            var file = tool switch { EditTool.Trim or EditTool.Bleep or EditTool.Channels or EditTool.Visualize => audio, EditTool.Split or EditTool.Speed => video, _ => sample };
+            if (file != sample && Shell.FFmpeg == null) continue;
+            Img.Save(Editor.Snapshot(file, tool, e => e.Demo()), Path.Combine(dir, $"editor-{tool}.png"));
+        }
+        foreach (var f in new[] { sample, audio, video }) File.Delete(f);
         foreach (var t in Theme.All)
         {
             Theme.Current = t;

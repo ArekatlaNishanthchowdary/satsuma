@@ -90,14 +90,10 @@ enum Catalog {
         var ops: [Op] = []
         switch kind {
         case .image:
-            // Editors open a window per picture (at most four at once) and save from there.
-            func editor(_ title: String, _ t: EditTool) -> Op {
-                Op(title: title) { urls in try onMain { try urls.prefix(4).forEach { try Editor.open($0, t) } }; return [] }
-            }
             ops = [
                 editor("Edit", .edit), editor("Crop", .crop), editor("Redact", .redact), editor("Annotate", .annotate), editor("Add BG", .background),
                 Op(title: "Compress") { urls in
-                    guard let target = onMain({ SizePrompt.ask(urls[0]) }) else { return [] }
+                    guard let target = onMain({ SizePrompt.ask(urls[0], SizePrompt.image) }) else { return [] }
                     return try urls.map { try ImageEdit.compress($0, target: target) }
                 },
                 each("Resize 50%") { try Img.transform($0, suffix: " small") { $0.transformed(by: CGAffineTransform(scaleX: 0.5, y: 0.5)) } },
@@ -107,22 +103,22 @@ enum Catalog {
             ]
             if multi { ops.append(Op(title: "Make PDF") { [try Img.makePDF($0)] }) }
         case .video:
-            ops = [each("Snapshot", AV.snapshot), each("Compress", AV.compressVideo), each("Extract Audio", AV.extractAudio)]
-            if ff {
-                ops += [
-                    each("Mute") { try AV.ff($0, suffix: " muted", ["-an", "-c:v", "copy"]) },
-                    each("Speed 2×") { try AV.ff($0, suffix: " 2x", ["-vf", "setpts=0.5*PTS", "-af", "atempo=2.0"]) },
-                    each("Strip Metadata") { try AV.ff($0, suffix: " clean", ["-map_metadata", "-1", "-c", "copy"]) },
-                ]
-                if multi { ops.append(Op(title: "Join") { [try AV.join($0)] }) }
-            }
+            guard ff else { ops = [each("Snapshot", AV.snapshot), each("Compress", AV.compressVideo), each("Extract Audio", AV.extractAudio)]; break }
+            ops = [
+                editor("Trim", .trim), editor("Split", .split), editor("Speed", .speed), editor("Crop", .crop), editor("Redact", .redact),
+                compress(SizePrompt.video), each("Snapshot", AV.snapshot),
+                each("Mute") { try AV.ff($0, suffix: " muted", ["-an", "-c:v", "copy"]) },
+                each("Extract Audio", AV.extractAudio),
+                each("Strip Metadata") { try AV.ff($0, suffix: " clean", ["-map_metadata", "-1", "-c", "copy"]) },
+            ]
+            if multi { ops.append(Op(title: "Join") { [try AV.join($0)] }) }
         case .audio:
             if ff {
                 ops = [
-                    each("Compress") { try AV.ff($0, ext: "m4a", suffix: " compressed", ["-vn", "-c:a", "aac", "-b:a", "96k"]) },
+                    editor("Trim", .trim), editor("Bleep", .bleep), editor("Channels", .channels), editor("Visualize", .visualize),
+                    editor("Split", .split), compress(SizePrompt.audio),
                     each("Normalize") { try AV.ff($0, suffix: " normalized", ["-af", "loudnorm"]) },
                     each("Trim Silence") { try AV.ff($0, suffix: " trimmed", ["-af", "silenceremove=start_periods=1:start_threshold=-50dB,areverse,silenceremove=start_periods=1:start_threshold=-50dB,areverse"]) },
-                    each("Mono") { try AV.ff($0, suffix: " mono", ["-ac", "1"]) },
                     each("Strip Metadata") { try AV.ff($0, suffix: " clean", ["-map_metadata", "-1", "-c", "copy"]) },
                 ]
                 if multi { ops.append(Op(title: "Join") { [try AV.join($0)] }) }
@@ -143,6 +139,19 @@ enum Catalog {
             break
         }
         return ops
+    }
+}
+
+/// Editors open a window per file (at most four at once) and save from there.
+func editor(_ title: String, _ t: EditTool) -> Op {
+    Op(title: title) { urls in try onMain { try urls.prefix(4).forEach { try Editor.open($0, t) } }; return [] }
+}
+
+/// Asks for the size on the main thread; the encode runs on the caller's background thread.
+func compress(_ sizes: [(String, Int)]) -> Op {
+    Op(title: "Compress") { urls in
+        guard let target = onMain({ SizePrompt.ask(urls[0], sizes) }) else { return [] }
+        return try urls.map { try AVEdit.compress($0, target: target) }
     }
 }
 

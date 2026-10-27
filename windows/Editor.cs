@@ -12,7 +12,8 @@ using System.Windows.Shapes;
 
 namespace Satsuma;
 
-enum EditTool { Edit, Crop, Redact, Annotate, Background }
+/// <summary>Image tools first; Trim…Speed are audio/video. Crop and Redact also work on video, using one frame as the canvas.</summary>
+enum EditTool { Edit, Crop, Redact, Annotate, Background, Trim, Bleep, Split, Channels, Visualize, Speed }
 
 /// <summary>
 /// One window for every image tool: live preview on the left (a downscaled copy), controls on the right, Save writes the
@@ -33,6 +34,16 @@ class Editor : Window
 
     // Tool state, all in full-image pixels.
     Adjustments adjust = new();
+    // Audio/video: the stage shows a waveform or frame strip whose width spans the whole duration.
+    readonly MediaInfo media;
+    readonly List<double> cuts = new();
+    int parts = 2;
+    ChannelMode channelMode = ChannelMode.Stereo;
+    double gainL = 1, gainR = 1, speed = 2;
+    WaveStyle waveStyle = WaveStyle.Wave;
+    readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12), FontWeight = FontWeights.SemiBold };
+    bool TimeTool => tool is EditTool.Trim or EditTool.Bleep or EditTool.Split or EditTool.Channels or EditTool.Visualize or EditTool.Speed;
+    double Time(double x) => Math.Clamp(x / full.PixelWidth, 0, 1) * media.Duration;
     Rect? crop;
     double cropRatio;
     readonly List<Rect> boxes = new();
@@ -51,7 +62,10 @@ class Editor : Window
     {
         (this.path, this.tool) = (path, tool);
         // Re-made at 96 DPI so one image pixel is one layout unit, whatever DPI the file declares.
-        full = ImageEdit.FromPixels(ImageEdit.Pixels(Img.Load(path), out int fw, out int fh), fw, fh);
+        if (Catalog.KindOf(path) is Kind.Audio or Kind.Video) media = AVEdit.Probe(path);
+        var picture = media == null ? Img.Load(path)
+            : tool is EditTool.Crop or EditTool.Redact ? AVEdit.Frame(path, media) : AVEdit.Picture(path, media, theme.Accent);
+        full = ImageEdit.FromPixels(ImageEdit.Pixels(picture, out int fw, out int fh), fw, fh);
         small = ImageEdit.Shrink(full, 1400, out s);
         backdrop = new Backdrop(theme.Accent, Darken(theme.Accent, 0.45));
         Title = $"{tool switch { EditTool.Background => "Add Background", _ => tool.ToString() }}: {System.IO.Path.GetFileName(path)}";
@@ -138,6 +152,33 @@ class Editor : Window
                 box.TextChanged += (_, _) => markText = box.Text;
                 Label("Text");
                 panel.Children.Add(box);
+                break;
+            case EditTool.Trim:
+                Hint("Drag across the timeline to choose the part to keep.");
+                panel.Children.Add(status);
+                break;
+            case EditTool.Bleep:
+                Hint("Drag over each part to bleep: it's silenced and covered with a tone. Ctrl+Z removes the last one.");
+                panel.Children.Add(status);
+                break;
+            case EditTool.Split:
+                Hint("Click the timeline where each cut goes, or leave it empty and pick a number of equal parts.");
+                SliderRow("Parts", 2, 10, parts, v => { parts = (int)Math.Round(v); Refresh(); });
+                panel.Children.Add(status);
+                break;
+            case EditTool.Channels:
+                Choice("Output", new[] { ("Stereo", ChannelMode.Stereo), ("Mono", ChannelMode.Mono), ("Left", ChannelMode.Left), ("Right", ChannelMode.Right), ("Swap", ChannelMode.Swap) },
+                    0, v => channelMode = v);
+                SliderRow("Left volume %", 0, 200, 100, v => gainL = v / 100);
+                SliderRow("Right volume %", 0, 200, 100, v => gainR = v / 100);
+                break;
+            case EditTool.Visualize:
+                Hint("Makes a 1280×720 video of the sound, in the theme colour.");
+                Choice("Style", new[] { ("Wave", WaveStyle.Wave), ("Bars", WaveStyle.Bars), ("Spectrum", WaveStyle.Spectrum) }, 0, v => waveStyle = v);
+                break;
+            case EditTool.Speed:
+                Choice("Speed", new[] { ("0.25×", 0.25), ("0.5×", 0.5), ("0.75×", 0.75), ("1.5×", 1.5), ("2×", 2.0), ("4×", 4.0) }, 4, v => speed = v);
+                Hint("Sound keeps its pitch.");
                 break;
             case EditTool.Background:
                 var pairs = new[]
@@ -267,6 +308,18 @@ class Editor : Window
                 if (done && r.Width > 2 && r.Height > 2) boxes.Add(r);
                 else live = done ? null : r;
                 break;
+            case EditTool.Trim:
+                // Time ranges are full-height strips of the timeline picture.
+                crop = r.Width > 2 ? new Rect(r.X, 0, r.Width, full.PixelHeight) : null;
+                break;
+            case EditTool.Bleep:
+                var strip = new Rect(r.X, 0, r.Width, full.PixelHeight);
+                if (done && r.Width > 2) boxes.Add(strip);
+                else live = done ? null : strip;
+                break;
+            case EditTool.Split:
+                if (done) cuts.Add(Time(b.X));
+                break;
             case EditTool.Annotate:
                 if (markKind == MarkKind.Pen)
                 {
@@ -289,7 +342,8 @@ class Editor : Window
 
     void Undo()
     {
-        if (tool == EditTool.Redact && boxes.Count > 0) boxes.RemoveAt(boxes.Count - 1);
+        if (tool is EditTool.Redact or EditTool.Bleep && boxes.Count > 0) boxes.RemoveAt(boxes.Count - 1);
+        if (tool == EditTool.Split && cuts.Count > 0) cuts.RemoveAt(cuts.Count - 1);
         if (tool == EditTool.Annotate && marks.Count > 0) marks.RemoveAt(marks.Count - 1);
         Refresh();
     }
@@ -297,7 +351,7 @@ class Editor : Window
     void Reset()
     {
         (adjust, crop, current, live) = (new(), null, null, null);
-        boxes.Clear(); marks.Clear();
+        boxes.Clear(); marks.Clear(); cuts.Clear();
         backdrop = new Backdrop(theme.Accent, Darken(theme.Accent, 0.45));
         foreach (var r in resets) r();
         Refresh();
@@ -326,15 +380,32 @@ class Editor : Window
         overlay.Height = preview.Height = shown.PixelHeight;
         overlay.Children.Clear();
         var accent = new SolidColorBrush(theme.Accent);
-        if (tool == EditTool.Crop && crop is Rect c)
+        if (tool is EditTool.Crop or EditTool.Trim && crop is Rect c)
         {
             var frame = Scale(c, s);
             var dim = new CombinedGeometry(GeometryCombineMode.Exclude, new RectangleGeometry(new Rect(0, 0, small.PixelWidth, small.PixelHeight)), new RectangleGeometry(frame));
             overlay.Children.Add(new Path { Data = dim, Fill = new SolidColorBrush(Color.FromArgb(140, 0, 0, 0)) });
             overlay.Children.Add(new Path { Data = new RectangleGeometry(frame), Stroke = accent, StrokeThickness = 2 / Zoom });
         }
-        if (tool == EditTool.Redact && live is Rect l)
+        if (tool is EditTool.Redact or EditTool.Bleep && live is Rect l)
             overlay.Children.Add(new Path { Data = new RectangleGeometry(Scale(l, s)), Stroke = accent, StrokeThickness = 2 / Zoom, StrokeDashArray = new DoubleCollection { 4, 3 } });
+        if (tool == EditTool.Bleep)
+            foreach (var b in boxes) overlay.Children.Add(new Path { Data = new RectangleGeometry(Scale(b, s)), Fill = new SolidColorBrush(Theme.WithAlpha(theme.Accent, 0.45)) });
+        if (tool == EditTool.Split)
+            foreach (var t in cuts.Count > 0 ? cuts : Enumerable.Range(1, parts - 1).Select(i => media.Duration * i / parts))
+            {
+                double x = t / media.Duration * small.PixelWidth;
+                overlay.Children.Add(new Path { Data = new LineGeometry(new Point(x, 0), new Point(x, small.PixelHeight)), Stroke = accent, StrokeThickness = 3 / Zoom,
+                    StrokeDashArray = cuts.Count > 0 ? null : new DoubleCollection { 3, 2 } });
+            }
+        if (media != null && TimeTool)
+            status.Text = tool switch
+            {
+                EditTool.Trim => crop is Rect t ? $"{AVEdit.Clock(Time(t.Left))} – {AVEdit.Clock(Time(t.Right))}  ({Time(t.Right) - Time(t.Left):0.0} s of {media.Duration:0.0} s)" : $"Length {AVEdit.Clock(media.Duration)}",
+                EditTool.Bleep => boxes.Count == 0 ? "Nothing bleeped yet" : string.Join("\n", boxes.Select(b => $"{AVEdit.Clock(Time(b.Left))} – {AVEdit.Clock(Time(b.Right))}")),
+                EditTool.Split => cuts.Count == 0 ? $"{parts} equal parts" : $"{cuts.Count + 1} parts, cut at " + string.Join(", ", cuts.OrderBy(c => c).Select(AVEdit.Clock)),
+                _ => "",
+            };
     }
 
     /// <summary>How much the Viewbox magnifies the preview, so outlines stay ~2 screen pixels thick.</summary>
@@ -343,6 +414,7 @@ class Editor : Window
 
     void Save()
     {
+        if (media != null) { SaveMedia(); return; }
         try
         {
             if (tool == EditTool.Crop && crop == null) throw new Fail("Drag on the picture to choose what to keep first.");
@@ -353,6 +425,38 @@ class Editor : Window
             Close();
         }
         catch (Exception e) { MessageBox.Show(this, e.Message, "Couldn't save", MessageBoxButton.OK, MessageBoxImage.Warning); }
+    }
+
+    /// <summary>ffmpeg can take minutes, so it runs off the UI thread; the window stays up, greyed out, until it's done.</summary>
+    void SaveMedia()
+    {
+        Func<string> job = tool switch
+        {
+            EditTool.Crop when crop is Rect r => () => AVEdit.CropVideo(path, r),
+            EditTool.Redact => () => AVEdit.RedactVideo(path, boxes.ToList(), redactStyle),
+            EditTool.Trim when crop is Rect r => () => AVEdit.Trim(path, Time(r.Left), Time(r.Right)),
+            EditTool.Bleep => () => AVEdit.Bleep(path, boxes.Select(b => (Time(b.Left), Time(b.Right))).ToList()),
+            EditTool.Split => () => AVEdit.Split(path, media, cuts.ToList(), parts),
+            EditTool.Channels => () => AVEdit.Channels(path, channelMode, gainL, gainR),
+            EditTool.Visualize => () => AVEdit.Visualize(path, waveStyle, theme.Accent),
+            EditTool.Speed => () => AVEdit.Speed(path, media, speed),
+            _ => null,
+        };
+        if (job == null) { MessageBox.Show(this, "Drag on the picture to choose the part first.", "Nothing selected"); return; }
+        var title = Title;
+        Title = "Saving… " + title;
+        IsEnabled = false;
+        System.Threading.Tasks.Task.Run(job).ContinueWith(t => Dispatcher.Invoke(() =>
+        {
+            if (t.Exception is { } e)
+            {
+                (Title, IsEnabled) = (title, true);
+                MessageBox.Show(this, e.InnerException?.Message ?? e.Message, "Couldn't save", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            Process.Start("explorer.exe", $"/select,\"{t.Result}\"");
+            Close();
+        }));
     }
 
     /// <summary>For --shots: the editor window as a picture, after <paramref name="setup"/> has set some state.</summary>
@@ -382,6 +486,12 @@ class Editor : Window
             case EditTool.Edit: adjust = new Adjustments(Exposure: 20, Contrast: 25, Saturation: 30, Temperature: 30); break;
             case EditTool.Crop: crop = new Rect(full.PixelWidth * 0.15, full.PixelHeight * 0.1, full.PixelWidth * 0.6, full.PixelHeight * 0.7); break;
             case EditTool.Redact: boxes.Add(new Rect(full.PixelWidth * 0.55, full.PixelHeight * 0.2, full.PixelWidth * 0.3, full.PixelHeight * 0.25)); break;
+            case EditTool.Trim: crop = new Rect(full.PixelWidth * 0.2, 0, full.PixelWidth * 0.45, full.PixelHeight); break;
+            case EditTool.Bleep:
+                boxes.Add(new Rect(full.PixelWidth * 0.3, 0, full.PixelWidth * 0.06, full.PixelHeight));
+                boxes.Add(new Rect(full.PixelWidth * 0.7, 0, full.PixelWidth * 0.08, full.PixelHeight));
+                break;
+            case EditTool.Split: cuts.AddRange(new[] { media.Duration * 0.3, media.Duration * 0.75 }); break;
             case EditTool.Annotate:
                 marks.Add(new Mark(MarkKind.Arrow, new() { new(full.PixelWidth * 0.2, full.PixelHeight * 0.8), new(full.PixelWidth * 0.5, full.PixelHeight * 0.45) }, markColor, Math.Max(4, full.PixelWidth / 150.0)));
                 marks.Add(new Mark(MarkKind.Text, new() { new(full.PixelWidth * 0.08, full.PixelHeight * 0.82) }, markColor, Math.Max(4, full.PixelWidth / 150.0), "Look here"));
@@ -393,7 +503,11 @@ class Editor : Window
 /// <summary>Asks for a target size; returns bytes, or null if cancelled.</summary>
 static class SizePrompt
 {
-    public static long? Ask(string file)
+    public static readonly (string, long)[] Image = { ("100 KB", 100_000L), ("250 KB", 250_000L), ("500 KB", 500_000L), ("1 MB", 1_000_000L), ("2 MB", 2_000_000L), ("5 MB", 5_000_000L) };
+    public static readonly (string, long)[] Audio = { ("1 MB", 1_000_000L), ("2 MB", 2_000_000L), ("5 MB", 5_000_000L), ("10 MB", 10_000_000L) };
+    public static readonly (string, long)[] Video = { ("8 MB", 8_000_000L), ("10 MB", 10_000_000L), ("25 MB", 25_000_000L), ("50 MB", 50_000_000L), ("100 MB", 100_000_000L) };
+
+    public static long? Ask(string file, (string, long)[] sizes)
     {
         var theme = Theme.Current;
         long? result = null;
@@ -407,7 +521,7 @@ static class SizePrompt
         var stack = new StackPanel { Margin = new Thickness(22) };
         stack.Children.Add(new TextBlock { Text = $"Make {System.IO.Path.GetFileName(file)} at most…", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 12) });
         var row = new WrapPanel();
-        foreach (var (label, bytes) in new[] { ("100 KB", 100_000L), ("250 KB", 250_000L), ("500 KB", 500_000L), ("1 MB", 1_000_000L), ("2 MB", 2_000_000L), ("5 MB", 5_000_000L) })
+        foreach (var (label, bytes) in sizes)
         {
             var b = new Button { Content = label, Padding = new Thickness(14, 6, 14, 6), Margin = new Thickness(0, 0, 8, 8), FontWeight = FontWeights.SemiBold,
                 Background = new SolidColorBrush(theme.Accent), Foreground = Brushes.White, BorderThickness = new Thickness(0) };

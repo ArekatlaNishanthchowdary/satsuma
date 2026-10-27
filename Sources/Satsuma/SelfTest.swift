@@ -3,6 +3,40 @@ import PDFKit
 
 /// `Satsuma --selftest`: round-trips one file of each native format through the real ops.
 enum SelfTest {
+    /// The audio/video editors' ffmpeg jobs, on a generated 4 s test video and a stereo tone.
+    static func mediaChecks(_ dir: URL, _ check: (Bool, String) -> Void) throws {
+        func near(_ a: Double, _ b: Double) -> Bool { abs(a - b) < 0.25 }
+        func size(_ u: URL) -> Int { (try? u.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? .max }
+        let v = dir.appendingPathComponent("v.mp4"), a = dir.appendingPathComponent("a.wav")
+        try Shell.ffmpeg(["-f", "lavfi", "-i", "testsrc=size=320x240:rate=25:duration=4", "-f", "lavfi", "-i", "sine=frequency=440:duration=4",
+                          "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", v.path])
+        try Shell.ffmpeg(["-f", "lavfi", "-i", "sine=frequency=440:duration=4", "-ac", "2", a.path])
+        let m = try AVEdit.probe(v)
+        check(near(m.duration, 4) && m.hasVideo && m.hasAudio && m.width == 320 && m.height == 240, "probe video")
+        check(near(try AVEdit.probe(AVEdit.trim(v, from: 1, to: 3)).duration, 2), "trim 1–3 s")
+        check(near(try AVEdit.probe(AVEdit.speed(v, m, 2)).duration, 2), "speed 2×")
+        check(AVEdit.atempo(0.25) == "atempo=0.5,atempo=0.5" && AVEdit.atempo(4) == "atempo=2,atempo=2", "atempo chains past 0.5–2")
+        let cropped = try AVEdit.probe(AVEdit.cropVideo(v, CGRect(x: 10, y: 10, width: 100, height: 80)))
+        check(cropped.width == 100 && cropped.height == 80, "video crop")
+        for style in RedactStyle.allCases {
+            check(try AVEdit.probe(AVEdit.redactVideo(v, [CGRect(x: 20, y: 20, width: 120, height: 90), CGRect(x: 200, y: 100, width: 60, height: 60)], style)).width == 320,
+                  "video redact (\(style.rawValue))")
+        }
+        let small = try AVEdit.compress(v, target: 100_000)
+        check(size(small) <= 100_000, "compress video to 100 KB (\(size(small) / 1000) KB)")
+        check(try AVEdit.picture(v, m, .orange).width == 1600, "video frame strip + waveform")
+        let am = try AVEdit.probe(a)
+        check(try AVEdit.picture(a, am, .orange).width == 1600, "waveform picture")
+        check(near(try AVEdit.probe(AVEdit.bleep(a, [(1, 2), (2.5, 3)])).duration, 4), "bleep keeps the length")
+        check(try Data(contentsOf: AVEdit.channels(a, .left, 1, 1))[22] == 1, "channels: left only is mono")
+        check(try Data(contentsOf: AVEdit.channels(a, .swap, 1, 0.5))[22] == 2, "channels: swap stays stereo")
+        let viz = try AVEdit.probe(AVEdit.visualize(a, .wave, .orange))
+        check(viz.width == 1280 && viz.height == 720 && near(viz.duration, 4), "visualize → 1280×720 video")
+        check(try FileManager.default.contentsOfDirectory(atPath: AVEdit.split(a, am, cuts: [], parts: 2).path).count == 2, "split into 2 equal parts")
+        check(try FileManager.default.contentsOfDirectory(atPath: AVEdit.split(v, m, cuts: [1, 2.5], parts: 2).path).count == 3, "split video at 1 s and 2.5 s")
+        check(size(try AVEdit.compress(a, target: 60_000)) <= 60_000, "compress audio to 60 KB")
+    }
+
     /// The pure functions behind the image editors (the windows themselves are checked by eye via --shot editor-…).
     static func editorChecks(_ img: CGImage, _ check: (Bool, String) -> Void) throws {
         func at(_ i: CGImage, _ x: Int, _ y: Int, _ c: Int) throws -> UInt8 {
@@ -97,6 +131,7 @@ enum SelfTest {
                 let webp = try Convert.run(Convert.run(png, to: "jpg"), to: "webp")
                 check(FileManager.default.fileExists(atPath: webp.path), "jpg → webp (ffmpeg)")
             }
+            if Shell.ffmpeg != nil { try mediaChecks(dir, check) }
             if Shell.pandoc != nil {
                 let md = dir.appendingPathComponent("m.md")
                 try "# Title\n\nSome *text*.".write(to: md, atomically: true, encoding: .utf8)

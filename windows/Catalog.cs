@@ -94,12 +94,10 @@ static class Catalog
         switch (kind)
         {
             case Kind.Image:
-                // Editors open a window per picture (at most four at once) and save from there.
-                Op Editor(string title, EditTool t) => new(title, fs => { foreach (var f in fs.Take(4)) Satsuma.Editor.Open(f, t); return new(); }, true);
                 ops.AddRange(new[] {
                     Editor("Edit", EditTool.Edit), Editor("Crop", EditTool.Crop), Editor("Redact", EditTool.Redact),
                     Editor("Annotate", EditTool.Annotate), Editor("Add BG", EditTool.Background),
-                    new Op("Compress", fs => SizePrompt.Ask(fs[0]) is long target ? fs.Select(f => ImageEdit.CompressTo(f, target)).ToList() : new(), true),
+                    new Op("Compress", fs => SizePrompt.Ask(fs[0], SizePrompt.Image) is long target ? fs.Select(f => ImageEdit.CompressTo(f, target)).ToList() : new(), true),
                     Each("Resize 50%", f => Img.Transform(f, " small", b => Img.Scale(b, 0.5, 0.5))),
                     Each("Rotate", f => Img.Transform(f, " rotated", b => Img.Rotate(b, 90))),
                     Each("Strip Metadata", f => Img.Transform(f, " clean", b => b)),
@@ -107,25 +105,30 @@ static class Catalog
                 if (multi) ops.Add(new Op("Make PDF", fs => new() { Pdfs.MakeFromImages(fs) }));
                 break;
             case Kind.Video:
-                ops.AddRange(new[] { Each("Snapshot", AV.Snapshot), Each("Compress", AV.CompressVideo), Each("Extract Audio", AV.ExtractAudio) });
-                if (ff)
+                if (!ff)
                 {
-                    ops.Add(Each("Mute", f => AV.FF(f, null, " muted", "-an", "-c:v", "copy")));
-                    ops.Add(Each("Speed 2×", f => AV.FF(f, null, " 2x", "-vf", "setpts=0.5*PTS", "-af", "atempo=2.0")));
-                    ops.Add(Each("Strip Metadata", f => AV.FF(f, null, " clean", "-map_metadata", "-1", "-c", "copy")));
-                    if (multi) ops.Add(new Op("Join", fs => new() { AV.Join(fs) }));
+                    ops.AddRange(new[] { Each("Snapshot", AV.Snapshot), Each("Compress", AV.CompressVideo), Each("Extract Audio", AV.ExtractAudio) });
+                    break;
                 }
+                ops.AddRange(new[] {
+                    Editor("Trim", EditTool.Trim), Editor("Split", EditTool.Split), Editor("Speed", EditTool.Speed),
+                    Editor("Crop", EditTool.Crop), Editor("Redact", EditTool.Redact), CompressTo(SizePrompt.Video),
+                    Each("Snapshot", AV.Snapshot), Each("Mute", f => AV.FF(f, null, " muted", "-an", "-c:v", "copy")), Each("Extract Audio", AV.ExtractAudio),
+                    Each("Strip Metadata", f => AV.FF(f, null, " clean", "-map_metadata", "-1", "-c", "copy")),
+                });
+                if (multi) ops.Add(new Op("Join", fs => new() { AV.Join(fs) }));
                 break;
             case Kind.Audio:
-                ops.AddRange(new[] { Each("Compress", AV.CompressAudio), Each("Mono", AV.Mono) });
-                if (ff)
-                {
-                    ops.Add(Each("Normalize", f => AV.FF(f, null, " normalized", "-af", "loudnorm")));
-                    ops.Add(Each("Trim Silence", f => AV.FF(f, null, " trimmed", "-af",
-                        "silenceremove=start_periods=1:start_threshold=-50dB,areverse,silenceremove=start_periods=1:start_threshold=-50dB,areverse")));
-                    ops.Add(Each("Strip Metadata", f => AV.FF(f, null, " clean", "-map_metadata", "-1", "-c", "copy")));
-                    if (multi) ops.Add(new Op("Join", fs => new() { AV.Join(fs) }));
-                }
+                if (!ff) { ops.AddRange(new[] { Each("Compress", AV.CompressAudio), Each("Mono", AV.Mono) }); break; }
+                ops.AddRange(new[] {
+                    Editor("Trim", EditTool.Trim), Editor("Bleep", EditTool.Bleep), Editor("Channels", EditTool.Channels),
+                    Editor("Visualize", EditTool.Visualize), Editor("Split", EditTool.Split), CompressTo(SizePrompt.Audio),
+                });
+                ops.Add(Each("Normalize", f => AV.FF(f, null, " normalized", "-af", "loudnorm")));
+                ops.Add(Each("Trim Silence", f => AV.FF(f, null, " trimmed", "-af",
+                    "silenceremove=start_periods=1:start_threshold=-50dB,areverse,silenceremove=start_periods=1:start_threshold=-50dB,areverse")));
+                ops.Add(Each("Strip Metadata", f => AV.FF(f, null, " clean", "-map_metadata", "-1", "-c", "copy")));
+                if (multi) ops.Add(new Op("Join", fs => new() { AV.Join(fs) }));
                 break;
             case Kind.Pdf:
                 ops.AddRange(new[] { Each("Compress", Pdfs.Compress), Each("Split Pages", Pdfs.Split), Each("Rotate", Pdfs.Rotate), Each("Strip Metadata", Pdfs.Strip) });
@@ -137,6 +140,17 @@ static class Catalog
         }
         return ops;
     }
+
+    /// <summary>Editors open a window per file (at most four at once) and save from there.</summary>
+    static Op Editor(string title, EditTool t) => new(title, fs => { foreach (var f in fs.Take(4)) Satsuma.Editor.Open(f, t); return new(); }, true);
+
+    /// <summary>Asks for the size on the UI thread; the encode itself runs in the background.</summary>
+    static Op CompressTo((string, long)[] sizes) => new("Compress", fs =>
+    {
+        long? target = null;
+        System.Windows.Application.Current.Dispatcher.Invoke(() => target = SizePrompt.Ask(fs[0], sizes));
+        return target is long t ? fs.Select(f => AVEdit.CompressTo(f, t)).ToList() : new();
+    });
 
     /// <summary>Alt wheel: things to do with the files themselves.</summary>
     static readonly List<Op> Actions = new()

@@ -11,8 +11,17 @@ if let i = CommandLine.arguments.firstIndex(of: "--shot"), CommandLine.arguments
         ctx.drawLinearGradient(sky, start: .zero, end: CGPoint(x: 0, y: 800), options: [])
         ctx.setFillColor(Theme.rgb(255, 235, 180).cgColor); ctx.fillEllipse(in: CGRect(x: 730, y: 240, width: 180, height: 180))
         ctx.setFillColor(Theme.rgb(40, 50, 70).cgColor); ctx.fillEllipse(in: CGRect(x: -500, y: 580, width: 1800, height: 840))
-        let sample = FileManager.default.temporaryDirectory.appendingPathComponent("satsuma-sample.png")
+        var sample = FileManager.default.temporaryDirectory.appendingPathComponent("satsuma-sample.png")
         try! Img.write(ctx.makeImage()!, to: sample)
+        // Time tools get generated media instead: a pulsing tone, or a test-pattern video.
+        if [.trim, .bleep, .channels, .visualize].contains(tool) {
+            sample = FileManager.default.temporaryDirectory.appendingPathComponent("satsuma-sample.wav")
+            try! Shell.ffmpeg(["-f", "lavfi", "-i", "sine=frequency=220:duration=12,volume='0.2+0.8*abs(sin(t*1.7))':eval=frame", "-ac", "2", sample.path])
+        } else if [.split, .speed].contains(tool) {
+            sample = FileManager.default.temporaryDirectory.appendingPathComponent("satsuma-sample.mp4")
+            try! Shell.ffmpeg(["-f", "lavfi", "-i", "testsrc2=size=640x360:rate=25:duration=12", "-f", "lavfi", "-i", "sine=frequency=330:duration=12",
+                               "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", sample.path])
+        }
         try! Editor.snapshot(sample, tool).representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: CommandLine.arguments[i + 2]))
         exit(0)
     }
