@@ -12,7 +12,7 @@ enum Mode { Convert, Tools, Actions }
 /// <summary>One slice of the wheel. <c>OnUiThread</c> ops (actions) touch the clipboard or show dialogs.</summary>
 record Op(string Title, Func<List<string>, List<string>> Run, bool OnUiThread = false);
 
-enum Kind { Image, Audio, Video, Pdf, Document, Sheet, Subtitle, Archive, Other }
+enum Kind { Image, Audio, Video, Pdf, Document, Sheet, Slides, Subtitle, Archive, Other }
 
 static class Catalog
 {
@@ -40,7 +40,8 @@ static class Catalog
             "pdf" => Kind.Pdf,
             "docx" or "rtf" or "txt" or "md" or "html" or "odt" => Kind.Document,
             "epub" => Shell.Pandoc == null ? Kind.Other : Kind.Document,
-            "csv" or "tsv" or "xlsx" => Kind.Sheet,
+            "csv" or "tsv" or "xlsx" or "ods" or "xls" => Kind.Sheet,
+            "ppt" or "pptx" or "odp" => Kind.Slides,
             "srt" or "vtt" => Kind.Subtitle,
             "zip" or "tar" or "tar.gz" or "gz" or "rar" or "7z" => Kind.Archive,
             _ => Kind.Other,
@@ -67,15 +68,18 @@ static class Catalog
 
     public static List<string> Targets(Kind kind)
     {
-        bool ff = Shell.FFmpeg != null;
+        bool ff = Shell.FFmpeg != null, office = Shell.Soffice != null;
         var list = kind switch
         {
-            Kind.Image => new List<string> { "jpg", "png", "tiff", "bmp", "gif", "pdf" }.Concat(ff ? new[] { "webp", "avif" } : new string[0]),
+            Kind.Image => new List<string> { "jpg", "png", "tiff", "bmp", "gif", "pdf", "docx" }.Concat(ff ? new[] { "webp", "avif" } : new string[0])
+                .Concat(Img.CanHeic.Value ? new[] { "heic" } : new string[0]),
             Kind.Audio => ff ? new[] { "mp3", "m4a", "wav", "flac", "ogg", "opus", "aiff", "wma" } : new[] { "mp3", "m4a", "wav", "flac", "wma" },
             Kind.Video => ff ? new[] { "mp4", "mov", "mkv", "webm", "avi", "wmv", "gif", "mp3", "m4a" } : new[] { "mp4", "wmv", "mp3", "m4a" },
-            Kind.Pdf => new[] { "png", "jpg", "txt", "md", "docx", "rtf", "html" },
+            Kind.Pdf => new List<string> { "png", "jpg", "txt", "md", "docx", "rtf", "html", "xlsx" }
+                .Concat(Shell.Pandoc != null ? new[] { "epub" } : new string[0]).Concat(office ? new[] { "pptx" } : new string[0]),
             Kind.Document => new List<string> { "pdf", "docx", "rtf", "html", "txt", "md", "odt" }.Concat(Shell.Pandoc != null ? new[] { "epub" } : new string[0]),
-            Kind.Sheet => new[] { "csv", "tsv", "xlsx" },
+            Kind.Sheet => new[] { "csv", "tsv", "xlsx", "ods", "pdf" },
+            Kind.Slides => office ? new[] { "pdf", "png", "jpg" } : new string[0],
             Kind.Subtitle => new[] { "srt", "vtt", "txt" },
             Kind.Archive => new[] { "zip", "tar", "tar.gz" },
             _ => new string[0],
@@ -151,6 +155,8 @@ static class Catalog
             else Process.Start(new ProcessStartInfo("powershell.exe") { WorkingDirectory = dir, UseShellExecute = true });
             return new();
         }, true),
+        new("Float", fs => { foreach (var f in fs.Take(8)) Float.Show(f); return new(); }, true),
+        new("Share", fs => { Share.Files(fs); return new(); }, true),
         new("Open", fs => { foreach (var f in fs) Process.Start(new ProcessStartInfo(f) { UseShellExecute = true }); return new(); }, true),
         new("Move To…", fs =>
         {

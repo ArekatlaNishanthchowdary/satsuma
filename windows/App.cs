@@ -21,8 +21,17 @@ static class Program
     {
         if (args.Contains("--selftest")) { AttachConsole(-1); return SelfTest.Run(); }
         if (args.FirstOrDefault() == "--shots") { SelfTest.Shots(args[1]); return 0; }
+        if (args.FirstOrDefault() == "--convert") { AttachConsole(-1); Console.WriteLine(Converter.Run(args[1], args[2])); return 0; }
 
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+        // Dev aid: "--action Float a.jpg" runs one Alt-wheel action without dragging.
+        if (args.FirstOrDefault() == "--action")
+        {
+            var files = args.Skip(2).Select(Path.GetFullPath).ToList();
+            app.Startup += (_, _) => Catalog.Ops(Mode.Actions, files).First(o => o.Title == args[1]).Run(files);
+            app.Run();
+            return 0;
+        }
         // "Send To → Satsuma" launches us with the files; show the menu, run the job, exit.
         if (args.FirstOrDefault() == "--pick")
         {

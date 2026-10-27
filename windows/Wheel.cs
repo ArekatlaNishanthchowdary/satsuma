@@ -22,6 +22,8 @@ class WheelWindow : Window
     List<Op> ops = new();
     int? hover;
     Theme theme = Theme.Current;
+    System.Windows.Media.Imaging.BitmapSource thumb;
+    string thumbFor, sizeText = "";
     readonly Surface surface;
 
     class Surface : FrameworkElement
@@ -59,6 +61,7 @@ class WheelWindow : Window
     {
         if (!IsVisible) { files = new(); Left = centerDip.X - Size / 2; Top = centerDip.Y - Size / 2; }
         if (newFiles != null) files = newFiles;
+        FilesChanged();
         Mode = mode;
         theme = Theme.Current;
         ops = Catalog.Ops(mode, files);
@@ -73,6 +76,7 @@ class WheelWindow : Window
         {
             files = dropped.ToList();
             ops = Catalog.Ops(Mode, files);
+            FilesChanged();
         }
         var next = Index(e.GetPosition(surface));
         if (next != hover && next != null) Click.Play();
@@ -91,10 +95,25 @@ class WheelWindow : Window
         OnPick?.Invoke(op, picked, mode);
     }
 
-    /// <summary>The wheel drawn over <paramref name="backdrop"/>, for screenshots of each theme.</summary>
-    public System.Windows.Media.Imaging.BitmapSource Render(Mode mode, List<string> sample, int? hoverIndex, Brush backdrop)
+    async void FilesChanged()
     {
-        (Mode, files, theme, hover) = (mode, sample, Theme.Current, hoverIndex);
+        sizeText = Thumbs.Describe(files);
+        var f = files.FirstOrDefault();
+        if (f == thumbFor) return;
+        (thumbFor, thumb) = (f, null);
+        if (f == null) return;
+        try
+        {
+            var t = await Thumbs.Get(f, 96);
+            if (thumbFor == f) { thumb = t; surface.InvalidateVisual(); }
+        }
+        catch { }  // no thumbnail: the hub shows the mode name instead
+    }
+
+    /// <summary>The wheel drawn over <paramref name="backdrop"/>, for screenshots of each theme.</summary>
+    public System.Windows.Media.Imaging.BitmapSource Render(Mode mode, List<string> sample, int? hoverIndex, Brush backdrop, System.Windows.Media.Imaging.BitmapSource sampleThumb = null)
+    {
+        (Mode, files, theme, hover, thumb, sizeText) = (mode, sample, Theme.Current, hoverIndex, sampleThumb, "2.4 MB");
         ops = Catalog.Ops(mode, files);
         var dv = new DrawingVisual();
         using (var dc = dv.RenderOpen())
@@ -163,11 +182,22 @@ class WheelWindow : Window
             else Label(dc, ops[i].Title, at, ops.Count > 10 ? 12 : 14.5, FontWeights.Bold, color);
         }
 
-        var title = hover is int h && h < ops.Count ? ops[h].Title : files.Count == 0 ? Mode.Title() : ops.Count == 0 ? "Nothing here" : Mode.Title();
-        Label(dc, title, new Point(C, C - 9), 13.5, FontWeights.Bold, hover == null ? text : theme.Accent);
+        // Hub: the file's thumbnail (or the hovered option / mode name), its size, then the mode keys.
+        if (hover is int h && h < ops.Count) Label(dc, ops[h].Title, new Point(C, C - 15), 13.5, FontWeights.Bold, theme.Accent);
+        else if (thumb != null)
+        {
+            const double t = 34;
+            double scale = t / Math.Max(thumb.PixelWidth, thumb.PixelHeight), w = thumb.PixelWidth * scale, ht = thumb.PixelHeight * scale;
+            var box = new Rect(C - w / 2, C - 15 - ht / 2, w, ht);
+            dc.PushClip(new RectangleGeometry(box, 5, 5));
+            dc.DrawImage(thumb, box);
+            dc.Pop();
+        }
+        else Label(dc, files.Count > 0 && ops.Count == 0 ? "Nothing here" : Mode.Title(), new Point(C, C - 15), 13.5, FontWeights.Bold, text);
+        Label(dc, sizeText, new Point(C, C + 10), 10.5, FontWeights.SemiBold, Theme.WithAlpha(text, 0.75));
         var keys = new[] { ("Shift", Mode.Convert), ("Ctrl", Mode.Tools), ("Alt", Mode.Actions) };
         for (int k = 0; k < keys.Length; k++)
-            Label(dc, keys[k].Item1, new Point(C + (k - 1) * 27, C + 13), 10, FontWeights.SemiBold,
+            Label(dc, keys[k].Item1, new Point(C + (k - 1) * 27, C + 27), 9.5, FontWeights.SemiBold,
                 keys[k].Item2 == Mode ? theme.Accent : Theme.WithAlpha(text, 0.5));
     }
 
@@ -182,7 +212,7 @@ class WheelWindow : Window
         ["Snapshot"] = '', ["Extract Audio"] = '', ["Mute"] = '', ["Speed 2×"] = '',
         ["Join"] = '', ["Normalize"] = '', ["Trim Silence"] = '', ["Mono"] = '',
         ["Split Pages"] = '', ["Merge"] = '', ["Extract"] = '',
-        ["Copy"] = '', ["Copy Path"] = '', ["Terminal"] = '', ["Open"] = '', ["Move To…"] = '',
+        ["Copy"] = '', ["Copy Path"] = '', ["Terminal"] = '', ["Open"] = '', ["Float"] = '\uE718', ["Share"] = '\uE72D', ["Move To…"] = '',
     };
 
     void Label(DrawingContext dc, string s, Point p, double size, FontWeight weight, Color color, FontFamily family = null)
@@ -202,6 +232,104 @@ class WheelWindow : Window
 
     [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr h, int i);
     [DllImport("user32.dll")] static extern int SetWindowLong(IntPtr h, int i, int v);
+}
+
+/// <summary>Shell thumbnails and a short size line for the hub and the Float window.</summary>
+static class Thumbs
+{
+    public static async System.Threading.Tasks.Task<System.Windows.Media.Imaging.BitmapSource> Get(string path, uint size)
+    {
+        Windows.Storage.IStorageItemProperties item = System.IO.Directory.Exists(path)
+            ? await Windows.Storage.StorageFolder.GetFolderFromPathAsync(path)
+            : await Windows.Storage.StorageFile.GetFileFromPathAsync(path);
+        using var t = await item.GetThumbnailAsync(Windows.Storage.FileProperties.ThumbnailMode.SingleItem, size);
+        using var s = System.IO.WindowsRuntimeStreamExtensions.AsStreamForRead(t);
+        var frame = System.Windows.Media.Imaging.BitmapDecoder.Create(s, System.Windows.Media.Imaging.BitmapCreateOptions.None,
+            System.Windows.Media.Imaging.BitmapCacheOption.OnLoad).Frames[0];
+        frame.Freeze();
+        return frame;
+    }
+
+    /// <summary>"2.4 MB", or "3 items · 7.1 MB"; folders aren't walked, so they add nothing.</summary>
+    public static string Describe(List<string> files)
+    {
+        if (files.Count == 0) return "";
+        double bytes = files.Where(System.IO.File.Exists).Sum(f => (double)new System.IO.FileInfo(f).Length);
+        var units = new[] { "B", "KB", "MB", "GB", "TB" };
+        int u = 0;
+        for (; bytes >= 1000 && u < units.Length - 1; u++) bytes /= 1000;
+        var size = u == 0 ? $"{bytes:0} B" : $"{bytes:0.#} {units[u]}";
+        if (files.Count == 1) return System.IO.Directory.Exists(files[0]) ? "Folder" : size;
+        return $"{files.Count} items · {size}";
+    }
+}
+
+/// <summary>An always-on-top preview of a file: the picture itself for images, the shell thumbnail otherwise.</summary>
+static class Float
+{
+    // ponytail: still image only; video/audio playback would need a MediaElement and transport controls.
+    public static void Show(string path)
+    {
+        System.Windows.Media.Imaging.BitmapSource img = null;
+        if (Catalog.KindOf(path) == Kind.Image) try { img = Img.Load(path); } catch { }
+        // Off the UI thread: Thumbs.Get awaits WinRT calls that would otherwise post back to this blocked thread.
+        img ??= System.Threading.Tasks.Task.Run(() => Thumbs.Get(path, 256)).GetAwaiter().GetResult();
+        double scale = Math.Min(1, Math.Min(520.0 / img.PixelWidth, 520.0 / img.PixelHeight));
+        var image = new Image { Source = img, Width = img.PixelWidth * scale, Height = img.PixelHeight * scale, Stretch = Stretch.Uniform };
+        var w = new Window
+        {
+            Title = System.IO.Path.GetFileName(path), Topmost = true, WindowStyle = WindowStyle.ToolWindow,
+            SizeToContent = SizeToContent.WidthAndHeight, Content = image, Background = Brushes.Black,
+            WindowStartupLocation = WindowStartupLocation.CenterScreen,
+        };
+        // Sized to the picture first, then free to resize with the picture following.
+        w.ContentRendered += (_, _) => { w.SizeToContent = SizeToContent.Manual; image.Width = image.Height = double.NaN; };
+        w.KeyDown += (_, e) => { if (e.Key == System.Windows.Input.Key.Escape) w.Close(); };
+        w.Show();
+    }
+}
+
+/// <summary>The Windows share sheet (Nearby Sharing, Mail, Teams, …) for a desktop app, via the HWND interop.</summary>
+static class Share
+{
+    [ComImport, Guid("3A3DCD6C-3EAB-43DC-BCDE-45671CE800C8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IDataTransferManagerInterop
+    {
+        IntPtr GetForWindow(IntPtr appWindow, ref Guid riid);
+        void ShowShareUIForWindow(IntPtr appWindow);
+    }
+
+    static Guid dtmIid = new("a5caee9b-8708-49d1-8d36-67d25a8da00c");
+    static Window host;
+    static List<Windows.Storage.IStorageItem> items;
+
+    public static void Files(List<string> files)
+    {
+        items = System.Threading.Tasks.Task.Run(async () =>
+        {
+            var list = new List<Windows.Storage.IStorageItem>();
+            foreach (var f in files)
+                list.Add(System.IO.Directory.Exists(f) ? await Windows.Storage.StorageFolder.GetFolderFromPathAsync(f) : await Windows.Storage.StorageFile.GetFileFromPathAsync(f));
+            return list;
+        }).GetAwaiter().GetResult();
+        var interop = Windows.ApplicationModel.DataTransfer.DataTransferManager.As<IDataTransferManagerInterop>();
+        if (host == null)
+        {
+            // The sheet anchors to a window of ours; an invisible 1-pixel one mid-screen is enough.
+            var area = SystemParameters.WorkArea;
+            host = new Window { Width = 1, Height = 1, WindowStyle = WindowStyle.None, AllowsTransparency = true, Background = Brushes.Transparent,
+                ShowInTaskbar = false, Topmost = true, Left = area.Left + area.Width / 2, Top = area.Top + area.Height / 2 };
+            host.Show();
+            var dtm = WinRT.MarshalInterface<Windows.ApplicationModel.DataTransfer.DataTransferManager>.FromAbi(
+                interop.GetForWindow(new WindowInteropHelper(host).Handle, ref dtmIid));
+            dtm.DataRequested += (_, e) =>
+            {
+                e.Request.Data.Properties.Title = items.Count == 1 ? items[0].Name : $"{items.Count} items";
+                e.Request.Data.SetStorageItems(items);
+            };
+        }
+        interop.ShowShareUIForWindow(new WindowInteropHelper(host).Handle);
+    }
 }
 
 /// <summary>Small floating "working…" card while a job runs.</summary>

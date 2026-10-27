@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices.WindowsRuntime;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -10,6 +11,8 @@ using Windows.Media.Editing;
 using Windows.Media.MediaProperties;
 using Windows.Media.Transcoding;
 using Windows.Storage;
+using Windows.Storage.Streams;
+using WinImg = Windows.Graphics.Imaging;
 
 namespace Satsuma;
 
@@ -31,7 +34,20 @@ static class Shell
     public static string FFmpeg => Find("ffmpeg.exe", Path.Combine(LocalApp, @"Microsoft\WinGet\Links"));
     public static string Pandoc => Find("pandoc.exe", Path.Combine(LocalApp, "Pandoc"),
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Pandoc"));
+    public static string Soffice => Find("soffice.exe", Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), @"LibreOffice\program"));
     public static string Tar => Path.Combine(Environment.SystemDirectory, "tar.exe");  // bsdtar: zip, tar, gz, rar, 7z
+
+    /// <summary>LibreOffice headless into a temp folder; returns the converted file there.</summary>
+    public static string Office(string src, string ext, string infilter = null)
+    {
+        var so = Soffice ?? throw new Fail("This needs LibreOffice: winget install TheDocumentFoundation.LibreOffice");
+        var dir = Paths.Temp();
+        var args = new List<string> { "--headless", "--norestore", $"-env:UserInstallation=file:///{Path.Combine(dir, "profile").Replace('\\', '/')}" };
+        if (infilter != null) args.Add($"--infilter={infilter}");
+        args.AddRange(new[] { "--convert-to", ext, "--outdir", dir, Path.GetFullPath(src) });
+        Run(so, args);
+        return Directory.GetFiles(dir, "*." + ext).FirstOrDefault() ?? throw new Fail($"LibreOffice couldn't convert {Path.GetFileName(src)}");
+    }
 
     public static byte[] Run(string exe, IEnumerable<string> args, string cwd = null)
     {
@@ -95,6 +111,7 @@ static class Converter
         Kind.Sheet => Sheets.Convert(src, ext),
         Kind.Subtitle => Subs.Convert(src, ext),
         Kind.Archive => Archive.Convert(src, ext),
+        Kind.Slides => Slides.Convert(src, ext),
         _ => throw new Fail($"Satsuma doesn't know how to convert {Path.GetFileName(src)}"),
     };
 }
@@ -138,6 +155,8 @@ static class Img
             return;
         }
         if (ext == "pdf") { Pdfs.FromImages(new[] { img }, path); return; }
+        if (ext == "docx") { Docs.WriteImage(img, path); return; }
+        if (ext is "heic" or "heif") { SaveHeic(img, path, quality); return; }
         BitmapEncoder enc = ext switch
         {
             "jpg" or "jpeg" => new JpegBitmapEncoder { QualityLevel = quality },
@@ -151,6 +170,34 @@ static class Img
         enc.Frames.Add(BitmapFrame.Create(img));
         using var fs = File.Create(path);
         enc.Save(fs);
+    }
+
+    /// <summary>True when Windows has the HEIF encoder (HEIF + HEVC extensions from the Store).</summary>
+    public static readonly Lazy<bool> CanHeic = new(() =>
+    {
+        try
+        {
+            var path = Path.Combine(Paths.Temp(), "probe.heic");
+            SaveHeic(BitmapSource.Create(2, 2, 96, 96, PixelFormats.Bgra32, null, new byte[16], 8), path, 90);
+            return new FileInfo(path).Length > 0;
+        }
+        catch { return false; }
+    });
+
+    static void SaveHeic(BitmapSource img, string path, int quality)
+    {
+        var bgra = new FormatConvertedBitmap(img, PixelFormats.Bgra32, null, 0);
+        var pixels = new byte[bgra.PixelWidth * bgra.PixelHeight * 4];
+        bgra.CopyPixels(pixels, bgra.PixelWidth * 4, 0);
+        using var sb = WinImg.SoftwareBitmap.CreateCopyFromBuffer(pixels.AsBuffer(), WinImg.BitmapPixelFormat.Bgra8, bgra.PixelWidth, bgra.PixelHeight, WinImg.BitmapAlphaMode.Straight);
+        using var ras = new InMemoryRandomAccessStream();
+        var opts = new[] { new KeyValuePair<string, WinImg.BitmapTypedValue>("ImageQuality", new WinImg.BitmapTypedValue(quality / 100f, Windows.Foundation.PropertyType.Single)) };
+        var enc = WinImg.BitmapEncoder.CreateAsync(WinImg.BitmapEncoder.HeifEncoderId, ras, opts).AsTask().GetAwaiter().GetResult();
+        enc.SetSoftwareBitmap(sb);
+        enc.FlushAsync().AsTask().GetAwaiter().GetResult();
+        ras.Seek(0);
+        using var fs = File.Create(path);
+        ras.AsStreamForRead().CopyTo(fs);
     }
 
     /// <summary>Transparent pixels onto white, so JPEG doesn't turn them black.</summary>

@@ -27,18 +27,27 @@ static class Pdfs
 {
     static Pdfs() => GlobalFontSettings.UseWindowsFontsUnderWindows = true;
 
-    public static string Convert(string src, string ext)
+    /// <summary><paramref name="near"/> names the output when <paramref name="src"/> is an intermediate temp PDF.</summary>
+    public static string Convert(string src, string ext, string near = null)
     {
+        near ??= src;
+        var outPath = Paths.Output(near, ext);
         switch (ext)
         {
             case "png" or "jpg":
                 var pages = Render(src);
-                if (pages.Count == 1) { var one = Paths.Output(src, ext); Img.Save(pages[0], one); return one; }
-                var dir = Paths.Folder(src, " pages");
+                if (pages.Count == 1) { Img.Save(pages[0], outPath); return outPath; }
+                var dir = Paths.Folder(near, " pages");
                 for (int i = 0; i < pages.Count; i++) Img.Save(pages[i], Path.Combine(dir, $"page {i + 1}.{ext}"));
                 return dir;
+            case "pptx":
+                File.Move(Shell.Office(src, "pptx", "impress_pdf_import"), outPath);
+                return outPath;
+            case "xlsx":
+                // ponytail: one row per text line, columns split on runs of 2+ spaces; real table detection is a layout-analysis project.
+                Sheets.Write(Text(src).Where(l => l.Trim().Length > 0).Select(l => Regex.Split(l.Trim(), @"\s{2,}|\t").ToList()).ToList(), outPath);
+                return outPath;
             default:
-                var outPath = Paths.Output(src, ext);
                 Docs.Write(Text(src), outPath);
                 return outPath;
         }
@@ -121,6 +130,51 @@ static class Pdfs
             Line(line);
         }
         g.Dispose();
+        doc.Save(outPath);
+    }
+
+    /// <summary>A ruled grid; the page widens to fit the columns instead of clipping them.</summary>
+    public static void FromTable(List<List<string>> rows, string outPath)
+    {
+        using var doc = new PdfDocument();
+        var font = new XFont("Arial", 9);
+        const double margin = 36, height = 792, rowHeight = 16, pad = 4;
+        int cols = rows.Count == 0 ? 0 : rows.Max(r => r.Count);
+        using (var probe = XGraphics.CreateMeasureContext(new XSize(1, 1), XGraphicsUnit.Point, XPageDirection.Downwards))
+        {
+            var widths = Enumerable.Range(0, cols).Select(c => Math.Min(240, rows.Max(r => c < r.Count ? probe.MeasureString(r[c], font).Width : 0)) + 2 * pad).ToArray();
+            double width = Math.Max(612, widths.Sum() + 2 * margin);
+            XGraphics g = null;
+            double y = height;
+            var pen = new XPen(XColors.LightGray, 0.5);
+            foreach (var row in rows.DefaultIfEmpty(new()))
+            {
+                if (y + rowHeight > height - margin)
+                {
+                    g?.Dispose();
+                    var p = doc.AddPage();
+                    p.Width = XUnit.FromPoint(width); p.Height = XUnit.FromPoint(height);
+                    g = XGraphics.FromPdfPage(p);
+                    y = margin;
+                }
+                double x = margin;
+                for (int c = 0; c < cols; c++)
+                {
+                    var cell = new XRect(x, y, widths[c], rowHeight);
+                    g.DrawRectangle(pen, cell);
+                    if (c < row.Count)
+                    {
+                        g.Save();
+                        g.IntersectClip(cell);
+                        g.DrawString(row[c].Replace('\n', ' '), font, XBrushes.Black, new XRect(x + pad, y, widths[c] - 2 * pad, rowHeight), XStringFormats.CenterLeft);
+                        g.Restore();
+                    }
+                    x += widths[c];
+                }
+                y += rowHeight;
+            }
+            g.Dispose();
+        }
         doc.Save(outPath);
     }
 
@@ -248,6 +302,12 @@ static class Docs
             case "pdf":
                 Pdfs.FromText(paras, path);
                 break;
+            case "epub":
+                var html = Path.Combine(Paths.Temp(), Path.GetFileNameWithoutExtension(path) + ".html");
+                Write(paras, html);
+                Shell.Run(Shell.Pandoc ?? throw new Fail("EPUB needs pandoc: winget install pandoc"),
+                    new[] { html, "-o", path, "--metadata", "title=" + Path.GetFileNameWithoutExtension(path) });
+                break;
             case "html":
                 File.WriteAllText(path, "<!doctype html>\n<meta charset=\"utf-8\">\n<body>\n" +
                     string.Concat(paras.Select(p => $"<p>{WebUtility.HtmlEncode(p)}</p>\n")) + "</body>\n");
@@ -281,14 +341,42 @@ static class Docs
         }
     }
 
-    /// <summary>Entries in insertion order; "mimetype" is stored uncompressed, as ODF requires.</summary>
-    public static void WriteZip(string path, Dictionary<string, string> entries)
+    /// <summary>A one-page DOCX holding the picture, scaled to fit 6.5" of text width.</summary>
+    public static void WriteImage(BitmapSource img, string path)
+    {
+        var png = new MemoryStream();
+        var enc = new PngBitmapEncoder();
+        enc.Frames.Add(BitmapFrame.Create(img));
+        enc.Save(png);
+        const long emuPerPx = 9525, maxCx = 5943600;  // 96 DPI pixels → EMU
+        long cx = img.PixelWidth * emuPerPx, cy = img.PixelHeight * emuPerPx;
+        if (cx > maxCx) (cx, cy) = (maxCx, cy * maxCx / cx);
+        const string rels = "http://schemas.openxmlformats.org/package/2006/relationships";
+        const string docRel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+        WriteZip(path, new()
+        {
+            ["[Content_Types].xml"] = "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Default Extension=\"png\" ContentType=\"image/png\"/><Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/></Types>",
+            ["_rels/.rels"] = $"<Relationships xmlns=\"{rels}\"><Relationship Id=\"rId1\" Type=\"{docRel}/officeDocument\" Target=\"word/document.xml\"/></Relationships>",
+            ["word/_rels/document.xml.rels"] = $"<Relationships xmlns=\"{rels}\"><Relationship Id=\"rId1\" Type=\"{docRel}/image\" Target=\"media/image1.png\"/></Relationships>",
+            ["word/document.xml"] = "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"" + docRel + "\" xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\"><w:body><w:p><w:r><w:drawing>" +
+                $"<wp:inline><wp:extent cx=\"{cx}\" cy=\"{cy}\"/><wp:docPr id=\"1\" name=\"Picture 1\"/><a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/picture\"><pic:pic>" +
+                "<pic:nvPicPr><pic:cNvPr id=\"1\" name=\"image1.png\"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed=\"rId1\"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>" +
+                $"<pic:spPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"{cx}\" cy=\"{cy}\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline>" +
+                "</w:drawing></w:r></w:p></w:body></w:document>",
+            ["word/media/image1.png"] = png.ToArray(),
+        });
+    }
+
+    /// <summary>Entries in insertion order: strings are XML parts, byte arrays are stored as-is. "mimetype" is stored uncompressed, as ODF requires.</summary>
+    public static void WriteZip(string path, Dictionary<string, object> entries)
     {
         using var zip = ZipFile.Open(path, ZipArchiveMode.Create);
         foreach (var (name, body) in entries)
         {
             var e = zip.CreateEntry(name, name == "mimetype" ? CompressionLevel.NoCompression : CompressionLevel.Optimal);
-            using var w = new StreamWriter(e.Open(), new UTF8Encoding(false));
+            using var s = e.Open();
+            if (body is byte[] bytes) { s.Write(bytes); continue; }
+            using var w = new StreamWriter(s, new UTF8Encoding(false));
             w.Write(name == "mimetype" ? body : "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n" + body);
         }
     }
@@ -306,6 +394,8 @@ static class Sheets
     public static List<List<string>> Read(string path) => Catalog.NormExt(path) switch
     {
         "xlsx" => Xlsx.Read(path),
+        "ods" => Ods.Read(path),
+        "xls" => Xlsx.Read(Shell.Office(path, "xlsx")),
         "tsv" => Parse(File.ReadAllText(path), '\t'),
         _ => Parse(File.ReadAllText(path), ','),
     };
@@ -315,6 +405,8 @@ static class Sheets
         switch (Path.GetExtension(path).ToLowerInvariant())
         {
             case ".xlsx": Xlsx.Write(rows, path); break;
+            case ".ods": Ods.Write(rows, path); break;
+            case ".pdf": Pdfs.FromTable(rows, path); break;
             case ".tsv": File.WriteAllText(path, Format(rows, '\t')); break;
             default: File.WriteAllText(path, Format(rows, ',')); break;
         }
@@ -366,7 +458,7 @@ static class Xlsx
     }
 
     // Leading-zero codes ("01234") stay text.
-    static bool IsNumber(string s) => double.TryParse(s, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _)
+    public static bool IsNumber(string s) => double.TryParse(s, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _)
         && (s == "0" || !s.StartsWith("0") || s.StartsWith("0."));
 
     public static void Write(List<List<string>> rows, string path)
@@ -413,6 +505,72 @@ static class Xlsx
             rows[r - 1][col] = value;
         }
         return rows;
+    }
+}
+
+/// <summary>OpenDocument spreadsheet: first table, values only, like <see cref="Xlsx"/>.</summary>
+static class Ods
+{
+    static readonly XNamespace Office = "urn:oasis:names:tc:opendocument:xmlns:office:1.0";
+    static readonly XNamespace Table = "urn:oasis:names:tc:opendocument:xmlns:table:1.0";
+    static readonly XNamespace Text = "urn:oasis:names:tc:opendocument:xmlns:text:1.0";
+
+    public static void Write(List<List<string>> rows, string path)
+    {
+        string Esc(string s) => SecurityElement.Escape(s);
+        var data = string.Concat(rows.Select(row => "<table:table-row>" + string.Concat(row.Select(v =>
+            (Xlsx.IsNumber(v) ? $"<table:table-cell office:value-type=\"float\" office:value=\"{v}\">" : "<table:table-cell office:value-type=\"string\">") +
+            string.Concat(v.Split('\n').Select(l => $"<text:p>{Esc(l)}</text:p>")) + "</table:table-cell>")) + "</table:table-row>"));
+        Docs.WriteZip(path, new()
+        {
+            ["mimetype"] = "application/vnd.oasis.opendocument.spreadsheet",
+            ["META-INF/manifest.xml"] = "<manifest:manifest xmlns:manifest=\"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0\" manifest:version=\"1.2\"><manifest:file-entry manifest:full-path=\"/\" manifest:media-type=\"application/vnd.oasis.opendocument.spreadsheet\"/><manifest:file-entry manifest:full-path=\"content.xml\" manifest:media-type=\"text/xml\"/></manifest:manifest>",
+            ["content.xml"] = $"<office:document-content xmlns:office=\"{Office}\" xmlns:table=\"{Table}\" xmlns:text=\"{Text}\" office:version=\"1.2\"><office:body><office:spreadsheet><table:table table:name=\"Sheet1\">{data}</table:table></office:spreadsheet></office:body></office:document-content>",
+        });
+    }
+
+    /// <summary>Repeated blank cells and rows (often a million of them) only count once something follows them.</summary>
+    public static List<List<string>> Read(string path)
+    {
+        XDocument content;
+        using (var zip = ZipFile.OpenRead(path))
+        using (var s = (zip.GetEntry("content.xml") ?? throw new Fail($"{Path.GetFileName(path)} looks damaged")).Open())
+            content = XDocument.Load(s);
+        var table = content.Descendants(Table + "table").FirstOrDefault() ?? throw new Fail($"No sheet in {Path.GetFileName(path)}");
+        int Repeat(XElement e, string attr) => int.TryParse((string)e.Attribute(Table + attr), out var n) ? n : 1;
+        var rows = new List<List<string>>();
+        int blankRows = 0;
+        foreach (var r in table.Descendants(Table + "table-row"))
+        {
+            var row = new List<string>();
+            int blankCells = 0;
+            foreach (var c in r.Elements().Where(e => e.Name == Table + "table-cell" || e.Name == Table + "covered-table-cell"))
+            {
+                var v = string.Join("\n", c.Elements(Text + "p").Select(p => p.Value));
+                if (v.Length == 0 && c.Attribute(Office + "value") is { } num) v = num.Value;
+                if (v.Length == 0) { blankCells += Repeat(c, "number-columns-repeated"); continue; }
+                row.AddRange(Enumerable.Repeat("", blankCells));
+                blankCells = 0;
+                row.AddRange(Enumerable.Repeat(v, Repeat(c, "number-columns-repeated")));
+            }
+            if (row.Count == 0) { blankRows += Repeat(r, "number-rows-repeated"); continue; }
+            for (; blankRows > 0; blankRows--) rows.Add(new());
+            for (int n = Repeat(r, "number-rows-repeated"); n > 0; n--) rows.Add(row.ToList());
+        }
+        return rows;
+    }
+}
+
+/// <summary>Presentations go through LibreOffice to PDF, then out as PDF or page images.</summary>
+static class Slides
+{
+    public static string Convert(string src, string ext)
+    {
+        var pdf = Shell.Office(src, "pdf");
+        if (ext != "pdf") return Pdfs.Convert(pdf, ext, near: src);
+        var outPath = Paths.Output(src, "pdf");
+        File.Move(pdf, outPath);
+        return outPath;
     }
 }
 
