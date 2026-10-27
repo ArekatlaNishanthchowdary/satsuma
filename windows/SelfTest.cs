@@ -83,17 +83,21 @@ static class SelfTest
         finally { try { Directory.Delete(dir, true); } catch { } }
     }
 
-    /// <summary><c>--shots dir</c>: one PNG per theme, the wheel over a colourful backdrop.</summary>
+    /// <summary><c>--shots dir</c>: transparent PNGs of each wheel (Tangerine) and of every theme, for the README.</summary>
     public static void Shots(string dir)
     {
         Directory.CreateDirectory(dir);
         var saved = Theme.Current;
-        var backdrop = new LinearGradientBrush(Color.FromRgb(40, 90, 200), Color.FromRgb(240, 120, 60), 45);
         var wheel = new WheelWindow();
+        var photo = new List<string> { @"C:\Vacation.jpg" };
+        Theme.Current = Theme.All[0];
+        Img.Save(wheel.Render(Mode.Convert, photo, 1, Brushes.Transparent), Path.Combine(dir, "mode-convert.png"));
+        Img.Save(wheel.Render(Mode.Tools, photo, 0, Brushes.Transparent), Path.Combine(dir, "mode-tools.png"));
+        Img.Save(wheel.Render(Mode.Actions, photo, 3, Brushes.Transparent), Path.Combine(dir, "mode-actions.png"));
         foreach (var t in Theme.All)
         {
             Theme.Current = t;
-            Img.Save(wheel.Render(Mode.Convert, new() { @"C:\Preview.jpg" }, 1, backdrop), Path.Combine(dir, t.Name + ".png"));
+            Img.Save(wheel.Render(Mode.Convert, photo, 1, Brushes.Transparent), Path.Combine(dir, "theme-" + t.Name + ".png"));
         }
         Theme.Current = saved;
     }

@@ -1,108 +1,174 @@
-# Satsuma
+<p align="center">
+  <img src="docs/icon.png" width="112" alt="Satsuma icon">
+</p>
 
-An open-source, offline file converter for the Mac menu bar, inspired by [Tangerine](https://tangerineformac.com/).
-Built for **Intel Macs** (and Apple Silicon with `ARCH=arm64`), macOS 13 or later.
+<h1 align="center">Satsuma</h1>
 
-## Download
+<p align="center">
+  <b>Drag a file. Tap a key. Drop it on a format.</b><br>
+  An open-source, offline file converter that lives in your menu bar or system tray.
+</p>
 
-Grab the latest installers from [Releases](https://github.com/ArekatlaNishanthchowdary/satsuma/releases/latest):
+<p align="center">
+  <a href="https://github.com/ArekatlaNishanthchowdary/satsuma/releases/latest"><img src="https://img.shields.io/github/v/release/ArekatlaNishanthchowdary/satsuma?color=ff8c1a&label=release" alt="Latest release"></a>
+  <img src="https://img.shields.io/badge/macOS-13%2B%20%C2%B7%20Intel-black?logo=apple" alt="macOS 13+ Intel">
+  <img src="https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?logo=windows" alt="Windows 10 and 11">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e" alt="MIT license"></a>
+  <img src="https://img.shields.io/badge/uploads-none%2C%20ever-8b5cf6" alt="No uploads">
+</p>
 
-- **Mac (Intel):** `Satsuma-<version>-mac-intel.dmg`. Open it, drag Satsuma to Applications, then right-click → **Open** the first time.
-- **Windows (x64):** `Satsuma-<version>-windows-x64.exe`. Run it; if SmartScreen appears, choose **More info → Run anyway**.
+<p align="center">
+  <a href="https://github.com/ArekatlaNishanthchowdary/satsuma/releases/latest"><b>⬇ Download for Mac (Intel)</b></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/ArekatlaNishanthchowdary/satsuma/releases/latest"><b>⬇ Download for Windows</b></a>
+</p>
 
-Neither is code-signed, so both systems ask once.
+<p align="center">
+  <img src="docs/wheels.png" alt="The three Satsuma wheels: Convert, Tools and Actions" width="100%">
+</p>
+
+---
+
+## Why Satsuma
+
+- **No windows, no upload page, no "choose output format" dialog.** The wheel appears right under your pointer, mid-drag.
+- **Private by design.** Every conversion runs on your computer. Nothing is uploaded, and there's no account, no telemetry and no network calls.
+- **Free and open source.** MIT licensed, with no trial limit and no subscription.
+- **Runs where Tangerine doesn't.** Built for **Intel Macs** (and Apple Silicon from source) and for **Windows**.
 
 ## How it works
 
-Drag any file in Finder, then **tap a key without letting go**:
+1. **Start dragging** any file, or several, in Finder or File Explorer, and keep holding the mouse button.
+2. **Tap a key.** A wheel of options opens around the pointer:
 
-| Key | Wheel | What's on it |
-|---|---|---|
-| ⇧ Shift | **Convert** | Output formats for that kind of file |
-| ⌘ Command | **Tools** | Compress, resize, rotate, split, merge, extract… |
-| ⌃ Control | **Actions** | AirDrop, Copy, Copy Path, Terminal, Quick Look, Move To… |
+   | Wheel | Mac | Windows | What's on it |
+   |---|---|---|---|
+   | **Convert** | <kbd>⇧ Shift</kbd> | <kbd>Shift</kbd> | Every output format for that kind of file |
+   | **Tools** | <kbd>⌘ Command</kbd> | <kbd>Ctrl</kbd> | Compress, resize, rotate, split, merge, extract… |
+   | **Actions** | <kbd>⌃ Control</kbd> | <kbd>Alt</kbd> | Copy, Copy Path, Terminal, Move To…, plus AirDrop & Quick Look (Mac) or Open (Windows) |
 
-A ring of options opens around the pointer. Keep dragging, drop the file on a slice, and the result is saved
-next to the original and shown in Finder. Drop in the middle to cancel. Tap a different key to switch wheels.
-Prefer clicking? Use **Choose Files…** in the menu bar icon.
+3. **Drop on a slice.** The result is saved **next to the original** and highlighted in Finder or Explorer.
+   Drop in the middle to cancel; tap another key to switch wheels.
 
-The wheel and progress card use **Liquid Glass** on macOS 26, and a blur on older systems. Pick a look under
-**Theme** in the menu bar icon: Tangerine, Clear Glass, Lime, Blueberry, Grape, Strawberry, Mint or Graphite (glass),
-or Midnight, Paper, Neon or Sunset (solid). **Preview Wheel** shows the current theme.
+Prefer clicking? Use **Choose Files…** in the menu bar or tray icon. On Windows you can also turn on
+**right-click → Send to → Satsuma**.
 
-Everything runs locally. Nothing is uploaded, and no Accessibility permission is needed.
-
-## Formats
-
-Built in (no extra installs):
+## What it converts
 
 | Kind | Convert to | Tools |
 |---|---|---|
-| Images (JPG, PNG, HEIC, TIFF, BMP, GIF, WebP, AVIF, SVG) | JPG PNG HEIC TIFF BMP GIF PDF | Compress, Resize 50%, Rotate, Flip, Grayscale, Strip Metadata, Read QR Code, Make PDF (several) |
-| Video (MP4, MOV, M4V) | MP4 MOV M4A | Snapshot, Compress, Extract Audio |
-| Audio (MP3, M4A, WAV, FLAC, AIFF, CAF) | M4A WAV AIFF FLAC | Mono |
-| PDF | PNG/JPG (300 DPI, every page), TXT, MD, DOCX, RTF, HTML | Compress, Split Pages, Rotate, Strip Metadata, Merge (several) |
-| Documents (DOCX, DOC, ODT, RTF, RTFD, HTML, TXT, MD) | PDF DOCX RTF HTML TXT MD ODT | |
-| Spreadsheets (CSV, TSV, XLSX) | CSV TSV XLSX | |
-| Subtitles (SRT, VTT) | SRT VTT TXT | |
-| Archives (ZIP, TAR, TAR.GZ, GZ, RAR, 7Z) | ZIP TAR TAR.GZ | Extract |
-| Anything | | Zip |
+| 🖼 **Images**: JPG, PNG, HEIC, TIFF, BMP, GIF, WebP, AVIF, SVG¹ | JPG · PNG · HEIC¹ · TIFF · BMP · GIF · PDF · WebP² · AVIF² | Compress · Resize 50% · Rotate · Flip · Grayscale · Strip Metadata · Read QR¹ · Make PDF |
+| 🎵 **Audio**: MP3, M4A, WAV, FLAC, OGG, Opus, AIFF, WMA | M4A · WAV · FLAC · AIFF¹ · MP3³ · WMA³ · OGG² · Opus² | Mono · Compress³ · Normalize² · Trim Silence² · Join² · Strip Metadata² |
+| 🎬 **Video**: MP4, MOV, MKV, WebM, AVI, WMV | MP4 · MOV¹ · WMV³ · M4A · MP3³ · MKV² · WebM² · AVI² · GIF² | Snapshot · Compress · Extract Audio · Mute² · Speed 2×² · Join² |
+| 📄 **PDF** | PNG / JPG (every page, 300 DPI) · TXT · Markdown · DOCX · RTF · HTML | Compress · Split Pages · Rotate · Merge · Strip Metadata |
+| 📝 **Documents**: DOCX, ODT, RTF, HTML, TXT, Markdown, EPUB⁴ | PDF · DOCX · ODT · RTF · HTML · TXT · Markdown · EPUB⁴ | |
+| 📊 **Spreadsheets**: CSV, TSV, XLSX | CSV · TSV · XLSX | |
+| 💬 **Subtitles**: SRT, VTT | SRT · VTT · TXT | |
+| 🗜 **Archives**: ZIP, TAR, TAR.GZ, GZ, RAR, 7z | ZIP · TAR · TAR.GZ | Extract |
+| 📁 **Anything** | | Zip |
 
-With **ffmpeg** installed (`brew install ffmpeg`) you also get:
+<sub>¹ Mac built in (on Windows, MOV and AIFF need ffmpeg; SVG input, HEIC output and Read QR are Mac-only) ·
+² needs ffmpeg · ³ Windows built in, Mac needs ffmpeg · ⁴ needs pandoc</sub>
 
-- Images: WebP and AVIF output
-- Audio: MP3, OGG, Opus and WMA output, plus Compress, Normalize, Trim Silence, Strip Metadata and Join
-- Video: MKV, WebM, AVI, WMV, GIF and MP3 output, plus Mute, Speed 2×, Strip Metadata and Join
+Satsuma uses what your OS already ships with (ImageIO, AVFoundation, PDFKit and Liquid Glass on macOS; Media Foundation,
+Windows.Data.Pdf and `tar` on Windows). **ffmpeg** and **pandoc** are optional, and Satsuma picks them up automatically:
 
-With **pandoc** installed (`brew install pandoc`) you also get EPUB in and out, and better Markdown (headings and lists).
+- **Windows:** `winget install ffmpeg` and `winget install pandoc`, or use the tray menu's **Install…** items.
+- **Intel Mac:** Homebrew no longer ships Intel builds, so put the standalone
+  [ffmpeg](https://evermeet.cx/ffmpeg/) and [pandoc](https://github.com/jgm/pandoc/releases) binaries in `~/.local/bin`.
 
-The menu bar menu shows whether each was found.
+## Themes
 
-## Build
+Twelve looks, from see-through **glass** to bold **solid** colours. Pick one under **Theme** in the menu, and the wheel previews it on the spot.
 
-You need the Xcode Command Line Tools (`xcode-select --install`). Full Xcode isn't required.
+<p align="center">
+  <img src="docs/themes.png" alt="All twelve Satsuma themes" width="100%">
+</p>
+
+On **macOS 26** the wheel and progress card use Apple's real **Liquid Glass** (`NSGlassEffectView`); older macOS gets a vibrancy blur.
+On **Windows** the glass is drawn: translucent layers, a tint, a specular highlight and a light rim.
+
+## Install
+
+<table>
+<tr><th>Mac (Intel, macOS 13+)</th><th>Windows 10 / 11 (x64)</th></tr>
+<tr valign="top"><td>
+
+1. Download `Satsuma-<version>-mac-intel.dmg`.
+2. Open it and drag **Satsuma** to **Applications**.
+3. First launch: **right-click → Open** (the app isn't notarised).
+4. Look for the ⟳ icon in the menu bar.
+
+</td><td>
+
+1. Download `Satsuma-<version>-windows-x64.exe`. It's one self-contained file.
+2. Run it. If SmartScreen appears: **More info → Run anyway**.
+3. Look for the 🍊 icon in the system tray (maybe under **^**).
+4. Optional: tray menu → **Start with Windows**.
+
+</td></tr>
+</table>
+
+Checksums are in `SHA256SUMS.txt` on each release.
+
+## Build from source
+
+**Mac**: needs only the Xcode Command Line Tools (`xcode-select --install`):
 
 ```bash
-./build.sh --dmg
+./build.sh --dmg                 # Intel (x86_64) → build/Satsuma.app, dist/Satsuma-<version>.dmg
+ARCH=arm64 ./build.sh --dmg      # Apple Silicon
+build/Satsuma.app/Contents/MacOS/Satsuma --selftest
 ```
 
-This produces `build/Satsuma.app` and `dist/Satsuma-<version>.dmg`. Run `build/Satsuma.app/Contents/MacOS/Satsuma --selftest`
-to round-trip a sample file through each built-in converter.
-
-The app is ad-hoc signed, so on first launch right-click it and choose **Open**.
-
-## Not (yet) like Tangerine
-
-- No Pages, Numbers, Keynote, PPT/PPTX or ODS. Those need Apple's or LibreOffice's apps.
-- Tools run with fixed settings: no crop/trim editors and no "compress to exactly N MB".
-- XLSX: first sheet only, values (not formulas).
-- The trigger keys are fixed.
-
-## License
-
-MIT
-
-## Windows
-
-`windows/` holds the Windows version: same wheel, same 12 themes, same converters, with Windows keys.
-
-| Key (tap mid-drag) | Wheel |
-|---|---|
-| Shift | Convert |
-| Ctrl | Tools |
-| Alt | Actions (Copy, Copy Path, Terminal, Open, Move To…) |
-
-It lives in the system tray. Click the orange icon for **Choose Files…**, **Theme**, **Preview Wheel**, **Show in Send To menu**
-(adds right-click → Send to → Satsuma) and **Start with Windows**.
-
-It uses Windows' own encoders (MP3, M4A, WAV, WMA, FLAC, MP4, WMV), PDF renderer and `tar.exe`, plus PDFsharp (MIT) and PdfPig (Apache-2.0).
-`winget install ffmpeg` and `winget install pandoc` add the same extras as on the Mac; the tray menu offers to install them.
-Glass on Windows is drawn (translucent layers, tint, highlight); it doesn't blur what's behind.
+**Windows**: needs the .NET 9 SDK:
 
 ```powershell
 cd windows
-dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o publish
+dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true `
+  -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o publish
 publish\Satsuma.exe --selftest
+publish\Satsuma.exe --shots out   # renders the wheels and themes used in this README
 ```
 
-The exe is unsigned, so SmartScreen asks once: **More info → Run anyway**.
+Both self-tests round-trip a sample of every built-in format and also exercise ffmpeg and pandoc when they're installed.
+
+<details>
+<summary><b>How it's built</b></summary>
+
+<br>
+
+| | macOS (`Sources/Satsuma`) | Windows (`windows/`) |
+|---|---|---|
+| Language | Swift, SwiftPM, AppKit | C# / .NET 9, WPF + WinForms tray |
+| Drag detection | Polls the system drag pasteboard and modifier keys at 30 Hz, so no Accessibility permission is needed | Polls mouse and modifier state at 30 Hz, with no global hook |
+| Wheel | Borderless panel, drop target, custom-drawn slices | Layered topmost window, OLE drop target |
+| Glass | `NSGlassEffectView` (macOS 26) / `NSVisualEffectView` | Drawn translucency + highlight |
+| Media | ImageIO, CoreImage, AVFoundation, `afconvert`, `avconvert` | WPF imaging, Media Foundation `MediaTranscoder` |
+| PDF | PDFKit, Quartz filters | Windows.Data.Pdf, [PDFsharp](https://github.com/empira/PDFsharp) (MIT), [PdfPig](https://github.com/UglyToad/PdfPig) (Apache-2.0) |
+| Documents | `NSAttributedString` (DOCX, ODT, RTF, HTML) | Hand-written DOCX/ODT, WPF RTF |
+| Spreadsheets | Hand-written XLSX reader/writer | Same, ported |
+| Archives | `bsdtar`, `zip`, `gzip` | `System.IO.Compression`, `tar.exe` (bsdtar) |
+
+The only third-party code ships in the Windows build (the two PDF libraries). Everything else is the OS.
+
+</details>
+
+## Limitations
+
+- No Pages, Numbers, Keynote, PPT/PPTX or ODS.
+- Tools use sensible fixed settings: no crop or trim editors, and no "compress to exactly N MB" yet.
+- XLSX reads the first sheet's values (not formulas).
+- The trigger keys are fixed. On Windows, tapping Shift while dragging a window shows an empty wheel until you let go.
+- The installers aren't code-signed, so your OS asks once.
+
+Ideas and pull requests are welcome.
+
+## Credits
+
+Inspired by [Tangerine](https://tangerineformac.com/), a lovely paid app for Apple Silicon Macs. Satsuma is an independent
+open-source project and isn't affiliated with it. If you're on Apple Silicon and want the polished original, go buy it.
+
+## License
+
+[MIT](LICENSE)
